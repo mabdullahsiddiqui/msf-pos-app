@@ -153,29 +153,84 @@ app.UseRequestLocalization();
 
 // Ensure data directory exists for persistent storage
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
-var dataDir = Path.GetDirectoryName(connectionString?.Replace("Data Source=", ""));
+var logger = app.Services.GetRequiredService<ILogger<Program>>();
 
-if (!string.IsNullOrEmpty(dataDir) && dataDir != ".")
+try
 {
-    if (!Directory.Exists(dataDir))
+    if (!string.IsNullOrEmpty(connectionString))
     {
-        Directory.CreateDirectory(dataDir);
-        Console.WriteLine($"Created data directory: {dataDir}");
+        // Extract directory path from connection string
+        var dbPath = connectionString.Replace("Data Source=", "").Trim();
+        var dataDir = Path.GetDirectoryName(dbPath);
+        
+        // Handle relative paths - resolve to application root
+        if (string.IsNullOrEmpty(dataDir) || dataDir == ".")
+        {
+            dataDir = Path.Combine(app.Environment.ContentRootPath, "App_Data");
+        }
+        else if (!Path.IsPathRooted(dataDir))
+        {
+            // Relative path - make it relative to ContentRootPath
+            dataDir = Path.Combine(app.Environment.ContentRootPath, dataDir);
+        }
+        
+        logger.LogInformation("Database directory: {DataDir}", dataDir);
+        
+        if (!Directory.Exists(dataDir))
+        {
+            try
+            {
+                Directory.CreateDirectory(dataDir);
+                logger.LogInformation("Created data directory: {DataDir}", dataDir);
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Failed to create data directory: {DataDir}", dataDir);
+                throw;
+            }
+        }
+        
+        // Verify write permissions by attempting to create a test file
+        var testFile = Path.Combine(dataDir, ".write-test");
+        try
+        {
+            File.WriteAllText(testFile, "test");
+            File.Delete(testFile);
+            logger.LogInformation("Write permissions verified for: {DataDir}", dataDir);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Write permissions test failed for: {DataDir}", dataDir);
+            throw;
+        }
     }
+}
+catch (Exception ex)
+{
+    logger.LogCritical(ex, "CRITICAL: Failed to set up data directory. Application cannot start.");
+    throw;
 }
 
 // Ensure database is created and seeded
-using (var scope = app.Services.CreateScope())
+try
 {
-    var context = scope.ServiceProvider.GetRequiredService<MasterDbContext>();
-    var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
-    
-    logger.LogInformation("Creating database tables...");
-    var created = await context.Database.EnsureCreatedAsync();
-    logger.LogInformation("Database created: {Created}", created);
-    
-    // Seed Super Admin if none exists
-    await SeedSuperAdminAsync(context, logger);
+    using (var scope = app.Services.CreateScope())
+    {
+        var context = scope.ServiceProvider.GetRequiredService<MasterDbContext>();
+        var scopeLogger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+        
+        scopeLogger.LogInformation("Creating database tables...");
+        var created = await context.Database.EnsureCreatedAsync();
+        scopeLogger.LogInformation("Database created: {Created}", created);
+        
+        // Seed Super Admin if none exists
+        await SeedSuperAdminAsync(context, scopeLogger);
+    }
+}
+catch (Exception ex)
+{
+    logger.LogCritical(ex, "CRITICAL: Failed to initialize database. Application cannot start.");
+    throw;
 }
 
 app.UseAuthentication();

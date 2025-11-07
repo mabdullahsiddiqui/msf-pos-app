@@ -1,0 +1,13 @@
+@rendermode InteractiveWebAssembly
+<Router AppAssembly="typeof(pos_app.Client._Imports).Assembly">
+	<Found Context="routeData">
+		<RouteView RouteData="routeData" DefaultLayout="typeof(pos_app.Client.Components.Layout.MainLayout)" />
+		<FocusOnNavigate RouteData="routeData" Selector="h1" />
+	</Found>
+	<NotFound>
+		<PageTitle>Not found</PageTitle>
+		<LayoutView>
+			<p role="alert">Sorry, there's nothing at this address.</p>
+		</LayoutView>
+	</NotFound>
+</Router>

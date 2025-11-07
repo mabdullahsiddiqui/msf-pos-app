@@ -1,0 +1,240 @@
+@page "/user/verify-code"
+@rendermode InteractiveWebAssembly
+@layout pos_app.Client.Components.Layout.AuthLayout
+@using pos_app.Client.Models
+@using pos_app.Client.Services
+@using System.ComponentModel.DataAnnotations
+@inject AuthService AuthService
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+
+<PageTitle>Verify Code - User</PageTitle>
+
+<div class="card shadow">
+    <div class="card-header text-white text-center">
+        <h4><i class="fas fa-shield-alt"></i> Verify Code</h4>
+    </div>
+    <div class="card-body">
+                    @if (!string.IsNullOrEmpty(errorMessage))
+                    {
+                        <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                            <i class="fas fa-exclamation-triangle"></i> @errorMessage
+                            <button type="button" class="btn-close" @onclick="() => errorMessage = string.Empty"></button>
+                        </div>
+                    }
+
+                    @if (!string.IsNullOrEmpty(successMessage))
+                    {
+                        <div class="alert alert-success alert-dismissible fade show" role="alert">
+                            <i class="fas fa-check-circle"></i> @successMessage
+                            <button type="button" class="btn-close" @onclick="() => successMessage = string.Empty"></button>
+                        </div>
+                    }
+
+                    <!-- Testing Mode - Show Current Verification Code -->
+                    @if (!string.IsNullOrEmpty(currentVerificationCode))
+                    {
+                        <div class="alert alert-info alert-dismissible fade show" role="alert">
+                            <h6 class="alert-heading"><i class="fas fa-bug"></i> Testing Mode</h6>
+                            <p class="mb-0">Current Verification Code: <strong>@currentVerificationCode</strong></p>
+                            <button type="button" class="btn-close" @onclick="() => currentVerificationCode = string.Empty"></button>
+                        </div>
+                    }
+
+                    <EditForm Model="verifyCodeRequest" OnValidSubmit="HandleVerifyCode" FormName="verifyCodeForm">
+                        <DataAnnotationsValidator />
+                        
+                        <div class="mb-3">
+                            <label for="email" class="form-label">Email Address</label>
+                            <InputText id="email" type="email" class="form-control" 
+                                      @bind-Value="verifyCodeRequest.Email" 
+                                      placeholder="Enter your email address" readonly />
+                            <ValidationMessage For="@(() => verifyCodeRequest.Email)" />
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="verificationCode" class="form-label">Verification Code</label>
+                            <InputText id="verificationCode" class="form-control text-center" 
+                                      @bind-Value="verifyCodeRequest.VerificationCode" 
+                                      placeholder="Enter 6-digit code" 
+                                      maxlength="6" />
+                            <ValidationMessage For="@(() => verifyCodeRequest.VerificationCode)" />
+                            <div class="form-text">
+                                <i class="fas fa-info-circle"></i> Enter the 6-digit code sent to your email
+                            </div>
+                        </div>
+
+                        <div class="d-grid">
+                            <button type="submit" class="btn btn-primary" disabled="@isLoading">
+                                @if (isLoading)
+                                {
+                                    <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                                }
+                                <i class="fas fa-check"></i> Verify Code
+                            </button>
+                        </div>
+                    </EditForm>
+
+                    @if (!string.IsNullOrEmpty(currentVerificationCode))
+                    {
+                        <div class="alert alert-info mt-3">
+                            <h6><i class="fas fa-info-circle"></i> Development Mode - Verification Code</h6>
+                            <p class="mb-0"><strong>Code:</strong> <code>@currentVerificationCode</code></p>
+                            <small class="text-muted">This code is shown for development purposes only.</small>
+                        </div>
+                    }
+
+                    <div class="text-center mt-3">
+                        <button type="button" class="btn btn-link text-decoration-none" @onclick="ResendCode" disabled="@isResending">
+                            @if (isResending)
+                            {
+                                <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                            }
+                            <i class="fas fa-redo"></i> Resend Code
+                        </button>
+                    </div>
+
+                    <div class="text-center mt-3">
+                        <a href="/user/forgot-password" class="text-decoration-none">
+                            <i class="fas fa-arrow-left"></i> Back to Forgot Password
+                        </a>
+                    </div>
+    </div>
+    <div class="card-footer text-center">
+        <small class="text-muted">
+            <i class="fas fa-info-circle"></i> Check your spam folder or click "Resend Code" to get a new verification code.
+        </small>
+    </div>
+</div>
+
+@code {
+    private UserVerifyCodeRequest verifyCodeRequest = new();
+    private string errorMessage = string.Empty;
+    private string successMessage = string.Empty;
+    private bool isLoading = false;
+    private bool isResending = false;
+    private string currentVerificationCode = string.Empty;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            // Get email from localStorage
+            var email = await JS.InvokeAsync<string>("localStorage.getItem", "userForgotPasswordEmail");
+            if (!string.IsNullOrEmpty(email))
+            {
+                verifyCodeRequest.Email = email;
+                await GetCurrentVerificationCode();
+                StateHasChanged();
+            }
+            else
+            {
+                Navigation.NavigateTo("/user/forgot-password");
+            }
+        }
+    }
+
+    private async Task GetCurrentVerificationCode()
+    {
+        try
+        {
+            // Get the verification code from localStorage (stored during forgot password)
+            var storedCode = await JS.InvokeAsync<string>("localStorage.getItem", "userVerificationCode");
+            if (!string.IsNullOrEmpty(storedCode))
+            {
+                currentVerificationCode = storedCode;
+            }
+            else
+            {
+                // If not found in localStorage, show a message
+                currentVerificationCode = "Code not found - please request a new one";
+            }
+        }
+        catch (Exception ex)
+        {
+            currentVerificationCode = "Error retrieving code";
+        }
+    }
+
+    private async Task HandleVerifyCode()
+    {
+        try
+        {
+            isLoading = true;
+            errorMessage = string.Empty;
+            successMessage = string.Empty;
+
+            var response = await AuthService.VerifyCodeAsync(verifyCodeRequest);
+            
+            if (response.Success)
+            {
+                // Store reset token for next step
+                if (!string.IsNullOrEmpty(response.ResetToken))
+                {
+                    await JS.InvokeVoidAsync("localStorage.setItem", "userResetToken", response.ResetToken);
+                }
+                
+                successMessage = "Code verified successfully! Redirecting to reset password...";
+                currentVerificationCode = string.Empty; // Clear the testing code
+                
+                // Navigate to reset password page
+                await Task.Delay(1500);
+                Navigation.NavigateTo("/user/reset-password");
+            }
+            else
+            {
+                errorMessage = response.Message;
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task ResendCode()
+    {
+        try
+        {
+            isResending = true;
+            errorMessage = string.Empty;
+            successMessage = string.Empty;
+
+            var request = new UserResendCodeRequest
+            {
+                Email = verifyCodeRequest.Email
+            };
+
+            var response = await AuthService.ResendCodeAsync(request);
+            
+            if (response.Success)
+            {
+                successMessage = "New verification code sent to your email!";
+                
+                // Update current verification code for testing
+                if (!string.IsNullOrEmpty(response.VerificationCode))
+                {
+                    currentVerificationCode = response.VerificationCode;
+                    // Store new code in localStorage
+                    await JS.InvokeVoidAsync("localStorage.setItem", "userVerificationCode", response.VerificationCode);
+                }
+            }
+            else
+            {
+                errorMessage = response.Message;
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error: {ex.Message}";
+        }
+        finally
+        {
+            isResending = false;
+        }
+    }
+}

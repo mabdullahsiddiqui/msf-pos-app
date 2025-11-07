@@ -1,0 +1,23 @@
+@using Microsoft.AspNetCore.Components
+
+<div class="report-title-header-content">
+    <h5 class="mb-0">
+        @if (!string.IsNullOrEmpty(IconClass))
+        {
+            <i class="@IconClass me-2"></i>
+        }
+        @Title
+    </h5>
+    @if (DateRangeContent != null)
+    {
+        <small class="text-muted">
+            @DateRangeContent
+        </small>
+    }
+</div>
+
+@code {
+    [Parameter] public string Title { get; set; } = string.Empty;
+    [Parameter] public string IconClass { get; set; } = string.Empty;
+    [Parameter] public RenderFragment? DateRangeContent { get; set; }
+}

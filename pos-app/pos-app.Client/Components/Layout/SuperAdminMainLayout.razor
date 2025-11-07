@@ -1,0 +1,461 @@
+@inherits LayoutComponentBase
+@implements IDisposable
+@namespace pos_app.Client.Components.Layout
+@using pos_app.Client.Services
+@inject AuthenticationStateService AuthState
+@inject NavigationManager Navigation
+@inject IJSRuntime JSRuntime
+
+@if (isLoading)
+{
+    <div class="d-flex justify-content-center align-items-center" style="height: 100vh;">
+        <div class="spinner-border text-primary" role="status">
+            <span class="visually-hidden">Loading...</span>
+        </div>
+    </div>
+}
+else if (!isAuthenticated)
+{
+    <div class="d-flex justify-content-center align-items-center" style="height: 100vh;">
+        <div class="text-center">
+            <h4>Redirecting to login...</h4>
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+        </div>
+    </div>
+}
+else
+{
+    <div class="min-vh-100 d-flex">
+    <!-- Sidebar -->
+    <div class="sidebar bg-dark text-white">
+        <div class="sidebar-header p-3">
+            <h5><i class="fas fa-shield-alt"></i> Super Admin</h5>
+        </div>
+        <nav class="sidebar-nav d-flex flex-column h-100">
+            <ul class="nav flex-column flex-grow-1">
+                <li class="nav-item">
+                    <a class="nav-link" href="/superadmin/dashboard">
+                        <i class="fas fa-tachometer-alt"></i> Dashboard
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="/superadmin/profile">
+                        <i class="fas fa-user-circle"></i> Profile
+                    </a>
+                </li>
+            </ul>
+        </nav>
+    </div>
+
+    <!-- Main Content -->
+    <div class="main-content flex-grow-1">
+        <div class="topbar bg-white shadow-sm">
+            <div class="d-flex justify-content-between align-items-center p-3">
+                <h4 class="mb-0">Super Admin Panel</h4>
+                <div class="d-flex align-items-center">
+                    <span class="text-muted me-3">Welcome, @(AuthState.CurrentSuperAdmin?.FullName ?? AuthState.CurrentSuperAdmin?.Username ?? "Admin")</span>
+                    <div class="dropdown">
+                        <button class="btn btn-outline-secondary dropdown-toggle" type="button" @onclick="ToggleDropdown" aria-expanded="@isDropdownOpen">
+                            <i class="fas fa-user-circle me-2"></i>
+                            <span class="d-none d-md-inline">Account</span>
+                        </button>
+                        <ul class="dropdown-menu @(isDropdownOpen ? "show" : "")" style="@(isDropdownOpen ? "display: block;" : "display: none;")">
+                            <li>
+                                <h6 class="dropdown-header">
+                                    <i class="fas fa-user me-2"></i>Account Management
+                                </h6>
+                            </li>
+                            <li>
+                                <a class="dropdown-item" href="/superadmin/profile" @onclick="CloseDropdown">
+                                    <i class="fas fa-user-edit me-2"></i>View Profile
+                                </a>
+                            </li>
+                            <li>
+                                <a class="dropdown-item" href="/superadmin/profile#change-password" @onclick="CloseDropdown">
+                                    <i class="fas fa-key me-2"></i>Change Password
+                                </a>
+                            </li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li>
+                                <h6 class="dropdown-header">
+                                    <i class="fas fa-cog me-2"></i>Settings
+                                </h6>
+                            </li>
+                            <li>
+                                <a class="dropdown-item" href="/superadmin/profile#settings" @onclick="CloseDropdown">
+                                    <i class="fas fa-cog me-2"></i>Account Settings
+                                </a>
+                            </li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li>
+                                <h6 class="dropdown-header">
+                                    <i class="fas fa-info-circle me-2"></i>Support
+                                </h6>
+                            </li>
+                            <li>
+                                <a class="dropdown-item" href="#" @onclick="ShowHelp">
+                                    <i class="fas fa-question-circle me-2"></i>Help & Support
+                                </a>
+                            </li>
+                            <li>
+                                <a class="dropdown-item" href="#" @onclick="ShowAbout">
+                                    <i class="fas fa-info-circle me-2"></i>About
+                                </a>
+                            </li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li>
+                                <a class="dropdown-item text-danger" href="#" @onclick="Logout">
+                                    <i class="fas fa-sign-out-alt me-2"></i>Logout
+                                </a>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="content p-4">
+            @Body
+        </div>
+    </div>
+</div>
+}
+
+<style>
+    .min-vh-100 {
+        min-height: 100vh;
+    }
+    
+    .sidebar {
+        width: 250px;
+        height: 100vh;
+        position: fixed;
+        left: 0;
+        top: 0;
+        background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
+    }
+    
+    .sidebar-header {
+        border-bottom: 1px solid rgba(255,255,255,0.1);
+    }
+    
+    .sidebar-nav .nav-link {
+        color: rgba(255,255,255,0.8);
+        padding: 12px 20px;
+        border-radius: 0;
+        transition: all 0.3s ease;
+    }
+    
+    .sidebar-nav .nav-link:hover {
+        background: rgba(255,255,255,0.1);
+        color: white;
+    }
+    
+    .sidebar-nav .nav-link.active {
+        background: rgba(255,255,255,0.2);
+        color: white;
+    }
+    
+    .sidebar-footer {
+        border-top: 1px solid rgba(255,255,255,0.1);
+        margin-top: auto;
+    }
+    
+    .main-content {
+        display: flex;
+        flex-direction: column;
+        margin-left: 250px;
+    }
+    
+    .topbar {
+        border-bottom: 1px solid #dee2e6;
+        position: fixed;
+        top: 0;
+        left: 250px;
+        right: 0;
+        z-index: 1000;
+        background: white;
+        height: 73px; /* Fixed height for consistent spacing */
+    }
+    
+    .content {
+        flex: 1;
+        background: #f8f9fa;
+        margin-top: 73px; /* Height of topbar to prevent content from going under it */
+    }
+    
+    .card {
+        border: none;
+        border-radius: 10px;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    }
+    
+    .btn-primary {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border: none;
+    }
+    
+    .btn-primary:hover {
+        background: linear-gradient(135deg, #5a6fd8 0%, #6a4190 100%);
+        transform: translateY(-1px);
+    }
+    
+    .table th {
+        background: #f8f9fa;
+        border-top: none;
+        font-weight: 600;
+    }
+    
+    .alert {
+        border: none;
+        border-radius: 10px;
+    }
+    
+    /* Enhanced dropdown styling */
+    .dropdown-menu {
+        border: none;
+        border-radius: 10px;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.15);
+        padding: 8px 0;
+        min-width: 220px;
+    }
+    
+    .dropdown-item {
+        padding: 10px 20px;
+        font-size: 14px;
+        transition: all 0.2s ease;
+        border-radius: 0;
+    }
+    
+    .dropdown-item:hover {
+        background-color: #f8f9fa;
+        color: #495057;
+        transform: translateX(2px);
+    }
+    
+    .dropdown-item.text-danger:hover {
+        background-color: #f8d7da;
+        color: #721c24;
+    }
+    
+    .dropdown-header {
+        font-size: 12px;
+        font-weight: 600;
+        color: #6c757d;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        padding: 8px 20px 4px;
+        margin-bottom: 4px;
+    }
+    
+    .dropdown-divider {
+        margin: 8px 0;
+        border-color: #e9ecef;
+    }
+    
+    .btn-outline-secondary {
+        border-color: #dee2e6;
+        color: #6c757d;
+        transition: all 0.2s ease;
+    }
+    
+    .btn-outline-secondary:hover {
+        background-color: #f8f9fa;
+        border-color: #adb5bd;
+        color: #495057;
+    }
+    
+    /* Custom dropdown positioning */
+    .dropdown {
+        position: relative;
+    }
+    
+    .dropdown-menu {
+        position: absolute;
+        top: 100%;
+        right: 0;
+        z-index: 1000;
+        margin-top: 0.125rem;
+    }
+    
+    .dropdown-menu.show {
+        display: block !important;
+    }
+</style>
+
+@code {
+    private bool isLoading = true;
+    private bool isAuthenticated = false;
+    private bool isDropdownOpen = false;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            // Subscribe to authentication state changes
+            AuthState.OnAuthenticationStateChanged += OnAuthenticationStateChanged;
+            await CheckAuthentication();
+        }
+    }
+
+    private void OnAuthenticationStateChanged()
+    {
+        Console.WriteLine("SuperAdminMainLayout: Authentication state changed, refreshing UI");
+        isAuthenticated = AuthState.IsAuthenticated;
+        StateHasChanged();
+    }
+
+    public void Dispose()
+    {
+        // Unsubscribe from the event to prevent memory leaks
+        AuthState.OnAuthenticationStateChanged -= OnAuthenticationStateChanged;
+    }
+
+    private async Task CheckAuthentication()
+    {
+        try
+        {
+            Console.WriteLine("SuperAdminMainLayout: Starting authentication check...");
+            
+            // First check if we have data in memory
+            if (AuthState.IsAuthenticated)
+            {
+                Console.WriteLine("SuperAdminMainLayout: Already authenticated in memory");
+                isAuthenticated = true;
+                isLoading = false;
+                StateHasChanged(); // Force UI update
+                return;
+            }
+
+            Console.WriteLine("SuperAdminMainLayout: Not in memory, checking localStorage...");
+            
+            // If not in memory, try to restore from localStorage
+            var isRestored = await AuthState.IsSuperAdminAuthenticatedAsync();
+            
+            Console.WriteLine($"SuperAdminMainLayout: Restoration result: {isRestored}");
+            
+            if (isRestored)
+            {
+                Console.WriteLine("SuperAdminMainLayout: Successfully restored from localStorage");
+                isAuthenticated = true;
+                StateHasChanged(); // Force UI update
+            }
+            else
+            {
+                Console.WriteLine("SuperAdminMainLayout: Failed to restore, redirecting to login");
+                // Clear any invalid data
+                await JSRuntime.InvokeVoidAsync("localStorage.removeItem", "superadmin_auth");
+                
+                // Small delay to show loading state
+                await Task.Delay(500);
+                Navigation.NavigateTo("/superadmin/login", forceLoad: true);
+                return;
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"SuperAdminMainLayout: Exception during auth check: {ex.Message}");
+            // If there's any error checking auth, redirect to login
+            Navigation.NavigateTo("/superadmin/login", forceLoad: true);
+            return;
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged(); // Force UI update
+        }
+    }
+
+    private async Task Logout()
+    {
+        try
+        {
+            Console.WriteLine("SuperAdminMainLayout: Starting logout process...");
+            
+            // Close dropdown before logout
+            CloseDropdown();
+            
+            // Use JavaScript to handle logout and navigation to prevent interference
+            await JSRuntime.InvokeVoidAsync("performSuperAdminLogout");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"SuperAdminMainLayout: Logout error: {ex.Message}");
+            // Fallback navigation
+            Navigation.NavigateTo("/superadmin/login", forceLoad: true);
+        }
+    }
+
+    private async Task ShowHelp()
+    {
+        try
+        {
+            // Close dropdown first to prevent any interference
+            CloseDropdown();
+            
+            // Show alert
+            await JSRuntime.InvokeVoidAsync("alert", 
+                "Super Admin Help\n\n" +
+                "• Dashboard: View and manage all application users\n" +
+                "• Profile: Manage your account settings and password\n" +
+                "• User Management: Create, edit, and test user connections\n\n" +
+                "For additional support, contact your system administrator.");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"ShowHelp error: {ex.Message}");
+        }
+    }
+
+    private async Task ShowAbout()
+    {
+        try
+        {
+            // Close dropdown first to prevent any interference
+            CloseDropdown();
+            
+            // Show alert
+            await JSRuntime.InvokeVoidAsync("alert", 
+                "POS System - Super Admin Panel\n\n" +
+                "Version: 1.0.0\n" +
+                "Built with: Blazor Server\n" +
+                "Database: SQL Server\n\n" +
+                "© 2024 POS System. All rights reserved.");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"ShowAbout error: {ex.Message}");
+        }
+    }
+
+    private void ToggleDropdown()
+    {
+        isDropdownOpen = !isDropdownOpen;
+        StateHasChanged();
+    }
+
+    private void CloseDropdown()
+    {
+        isDropdownOpen = false;
+        StateHasChanged();
+    }
+}
+
+<script>
+    window.performSuperAdminLogout = function() {
+        console.log("JavaScript: Starting super admin logout...");
+        
+        // Clear localStorage
+        localStorage.removeItem("superadmin_auth");
+        console.log("JavaScript: localStorage cleared");
+        
+        // Small delay to ensure cleanup
+        setTimeout(function() {
+            console.log("JavaScript: Navigating to super admin login...");
+            // Force navigation to super admin login
+            window.location.href = "/superadmin/login";
+        }, 100);
+    };
+</script>

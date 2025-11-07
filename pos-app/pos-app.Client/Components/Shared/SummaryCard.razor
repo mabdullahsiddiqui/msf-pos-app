@@ -1,0 +1,36 @@
+@using Microsoft.AspNetCore.Components
+
+<div class="@ColumnClass">
+    <div class="card bg-@BgColor text-white">
+        <div class="card-body text-center">
+            <h6 class="mb-1">@Title</h6>
+            <h4 class="mb-0">
+                @if (ValueContent != null)
+                {
+                    @ValueContent
+                }
+                else
+                {
+                    @Value
+                }
+            </h4>
+        </div>
+    </div>
+</div>
+
+@code {
+    // Title/label for the summary card
+    [Parameter] public string Title { get; set; } = string.Empty;
+
+    // Value to display in the card (string)
+    [Parameter] public string Value { get; set; } = string.Empty;
+
+    // Value content as RenderFragment (for complex content)
+    [Parameter] public RenderFragment? ValueContent { get; set; }
+
+    // Background color class. Options: "primary", "success", "danger", "info", "warning", "secondary"
+    [Parameter] public string BgColor { get; set; } = "primary";
+
+    // Bootstrap column class (e.g., "col-md-3", "col-md-4", "col-md-6")
+    [Parameter] public string ColumnClass { get; set; } = "col-md-3";
+}

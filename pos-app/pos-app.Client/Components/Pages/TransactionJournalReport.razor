@@ -1,0 +1,388 @@
+@page "/reports/transaction-journal"
+@using pos_app.Client.Services
+@using pos_app.Client.Models
+@using pos_app.Client.Components.Shared
+@inject DataService DataService
+@inject SessionService SessionService
+
+<PageTitle>Transaction Journal Report - POS System</PageTitle>
+
+<style>
+    .total-row {
+        background-color: #e9ecef !important;
+        font-weight: bold;
+    }
+    
+    .header-row {
+        background-color: #000000 !important;
+        color: #ffffff !important;
+    }
+    
+    .journal-table td {
+        vertical-align: top;
+    }
+    
+    .journal-table .text-end {
+        text-align: right;
+    }
+    
+    /* Ensure header text is black */
+    .journal-table thead th {
+        color: #000 !important;
+    }
+
+    .document-type-checkbox {
+        margin-bottom: 0.5rem;
+    }
+
+    /* Particulars column formatting */
+    .particulars-description {
+        white-space: pre-line;
+        word-wrap: break-word;
+        line-height: 1.6;
+    }
+    
+    .particulars-description div {
+        margin-bottom: 2px;
+    }
+    
+    .particulars-description .description-text {
+        white-space: pre-line;
+        font-family: inherit;
+    }
+</style>
+
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+
+            <!-- Date Filter and Document Type Selection -->
+            <FilterCard Title="Daily Transaction" IconClass="fas fa-calendar-alt">
+                <div class="row mb-3">
+                    <DateInput Label="From Date:" Id="fromDate" @bind-Value="fromDate" MinDate="@minDate" />
+                    <DateInput Label="Upto Date:" Id="toDate" @bind-Value="toDate" />
+                    <div class="col-md-6 d-flex align-items-end gap-2">
+                        <ActionButton Text="Preview" IconClass="fas fa-search" OnClick="LoadTransactionJournal" IsLoading="@isLoading" IsDisabled="@isLoading" />
+                    </div>
+                </div>
+                
+                <!-- Document Types Selection -->
+                <div class="row">
+                    <div class="col-12">
+                        <label class="form-label fw-bold">Documents:</label>
+                        <div class="row">
+                            <div class="col-md-4">
+                                <div class="document-type-checkbox">
+                                    <input type="checkbox" id="chkSalesJournal" class="form-check-input" checked="@selectedDocumentTypes["SV"]" @onchange="@((e) => OnDocumentTypeChanged("SV", e.Value))" />
+                                    <label class="form-check-label ms-2" for="chkSalesJournal">Sales Journal</label>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="document-type-checkbox">
+                                    <input type="checkbox" id="chkPurchaseJournal" class="form-check-input" checked="@selectedDocumentTypes["ES"]" @onchange="@((e) => OnDocumentTypeChanged("ES", e.Value))" />
+                                    <label class="form-check-label ms-2" for="chkPurchaseJournal">Purchase Journal</label>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="document-type-checkbox">
+                                    <input type="checkbox" id="chkSalesReturnJournal" class="form-check-input" checked="@selectedDocumentTypes["SR"]" @onchange="@((e) => OnDocumentTypeChanged("SR", e.Value))" />
+                                    <label class="form-check-label ms-2" for="chkSalesReturnJournal">Sales Return Journal</label>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="document-type-checkbox">
+                                    <input type="checkbox" id="chkJournalVoucher" class="form-check-input" checked="@selectedDocumentTypes["JV"]" @onchange="@((e) => OnDocumentTypeChanged("JV", e.Value))" />
+                                    <label class="form-check-label ms-2" for="chkJournalVoucher">Journal Voucher</label>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="document-type-checkbox">
+                                    <input type="checkbox" id="chkCashPaymentJournal" class="form-check-input" checked="@selectedDocumentTypes["CP"]" @onchange="@((e) => OnDocumentTypeChanged("CP", e.Value))" />
+                                    <label class="form-check-label ms-2" for="chkCashPaymentJournal">Cash Payment Journal</label>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="document-type-checkbox">
+                                    <input type="checkbox" id="chkCashReceiptsJournal" class="form-check-input" checked="@selectedDocumentTypes["CR"]" @onchange="@((e) => OnDocumentTypeChanged("CR", e.Value))" />
+                                    <label class="form-check-label ms-2" for="chkCashReceiptsJournal">Cash Receipts Journal</label>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="document-type-checkbox">
+                                    <input type="checkbox" id="chkBankPaymentJournal" class="form-check-input" checked="@selectedDocumentTypes["BP"]" @onchange="@((e) => OnDocumentTypeChanged("BP", e.Value))" />
+                                    <label class="form-check-label ms-2" for="chkBankPaymentJournal">Bank Payment Journal</label>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="document-type-checkbox">
+                                    <input type="checkbox" id="chkBankReceiptsJournal" class="form-check-input" checked="@selectedDocumentTypes["BR"]" @onchange="@((e) => OnDocumentTypeChanged("BR", e.Value))" />
+                                    <label class="form-check-label ms-2" for="chkBankReceiptsJournal">Bank Receipts Journal</label>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="document-type-checkbox">
+                                    <input type="checkbox" id="chkInterBankJournal" class="form-check-input" checked="@selectedDocumentTypes["IB"]" @onchange="@((e) => OnDocumentTypeChanged("IB", e.Value))" />
+                                    <label class="form-check-label ms-2" for="chkInterBankJournal">Inter Bank Journal</label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </FilterCard>
+
+            <!-- Loading Indicator -->
+            @if (isLoading)
+            {
+                <LoadingSpinner Message="Generating transaction journal report..." />
+            }
+
+            <!-- Error Message -->
+            <ErrorAlert Message="@errorMessage" />
+
+            <!-- Report Data -->
+            @if (transactionJournalData != null && transactionJournalData.Success)
+            {
+                <ReportTable FilterableColumns="@(new List<int> { 0, 1, 2 })">
+                    <HeaderContent>
+                        <ReportTitleHeader Title="General Journal" IconClass="fas fa-book">
+                            <DateRangeContent>
+                                From:- @transactionJournalData.FromDate.ToString("dd/MM/yyyy") 
+                                To Date:- @transactionJournalData.ToDate.ToString("dd/MM/yyyy")
+                            </DateRangeContent>
+                        </ReportTitleHeader>
+                    </HeaderContent>
+                    
+                    <SummaryCards>
+                        <SummaryCard Title="Total Debit" Value="@CurrencyHelper.FormatNumber(transactionJournalData.TotalDebit)" BgColor="danger" ColumnClass="col-md-4" />
+                        <SummaryCard Title="Total Credit" Value="@CurrencyHelper.FormatNumber(transactionJournalData.TotalCredit)" BgColor="success" ColumnClass="col-md-4" />
+                        <SummaryCard Title="Total Entries" Value="@transactionJournalData.Data.Count().ToString()" BgColor="info" ColumnClass="col-md-4" />
+                    </SummaryCards>
+
+                    <BodyContent>
+                        <div class="table-responsive">
+                            <table class="table table-bordered journal-table">
+                                <thead>
+                                    <tr>
+                                        <th>Date</th>
+                                        <th>Particulars</th>
+                                        <th>Vr.No</th>
+                                        <th class="text-end">Debit</th>
+                                        <th class="text-end">Credit</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @if (transactionJournalData.Data.Any())
+                                    {
+                                        @foreach (var item in transactionJournalData.Data)
+                                        {
+                                            @if (item.IsHeaderRow)
+                                            {
+                                                @* Header row for document type *@
+                                                <tr class="header-row">
+                                                    <td></td>
+                                                    <td colspan="4" class="text-center fw-bold">
+                                                        @item.DocumentTypeName
+                                                    </td>
+                                                </tr>
+                                            }
+                                            else
+                                            {
+                                                <tr class="@(item.IsTotalRow ? "total-row" : "")">
+                                                    <td>
+                                                        @if (item.Date.HasValue)
+                                                        {
+                                                            @item.Date.Value.ToString("dd/MM/yyyy")
+                                                        }
+                                                    </td>
+                                                    <td>
+                                                        @if (!item.IsTotalRow)
+                                                        {
+                                                            <div class="particulars-description">
+                                                                @* Show AccName (bold, underlined) on first line if it exists *@
+                                                                @if (!string.IsNullOrWhiteSpace(item.AccName))
+                                                                {
+                                                                    <div class="fw-bold text-decoration-underline">@item.AccName.ToUpper()</div>
+                                                                }
+                                                                @* For debit entries: show "Sales" (not bold, not underlined) on second line *@
+                                                                @if (!string.IsNullOrWhiteSpace(item.Particulars) && item.Particulars == "Sales")
+                                                                {
+                                                                    <div>@item.Particulars</div>
+                                                                }
+                                                                @* For credit entries: show Description (not bold) on second line with proper formatting *@
+                                                                @if (!string.IsNullOrWhiteSpace(item.Description))
+                                                                {
+                                                                    <div class="description-text">@item.Description</div>
+                                                                }
+                                                                @* For credit entries: show DeliverTo and VehicleNo on separate lines if present *@
+                                                                @if (!item.IsTotalRow && string.IsNullOrWhiteSpace(item.Particulars) && item.Credit > 0)
+                                                                {
+                                                                    @if (!string.IsNullOrWhiteSpace(item.DeliverTo))
+                                                                    {
+                                                                        <div>Deliver to :@item.DeliverTo</div>
+                                                                    }
+                                                                    @if (!string.IsNullOrWhiteSpace(item.VehicleNo))
+                                                                    {
+                                                                        <div>Vehicle No:@item.VehicleNo</div>
+                                                                    }
+                                                                }
+                                                            </div>
+                                                        }
+                                                        @* Total rows have empty Particulars column - "Total:" is in Vr.No column *@
+                                                    </td>
+                                                    <td>
+                                                        @if (!string.IsNullOrEmpty(item.VrNo))
+                                                        {
+                                                            @if (item.IsTotalRow)
+                                                            {
+                                                                <strong>@item.VrNo</strong>
+                                                            }
+                                                            else
+                                                            {
+                                                                @item.VrNo
+                                                            }
+                                                        }
+                                                    </td>
+                                                    <td class="text-end">
+                                                        @if (item.Debit > 0)
+                                                        {
+                                                            <span>@CurrencyHelper.FormatNumber(item.Debit)</span>
+                                                        }
+                                                        else
+                                                        {
+                                                            <span>0.00</span>
+                                                        }
+                                                    </td>
+                                                    <td class="text-end">
+                                                        @if (item.Credit > 0)
+                                                        {
+                                                            <span>@CurrencyHelper.FormatNumber(item.Credit)</span>
+                                                        }
+                                                        else
+                                                        {
+                                                            <span>0.00</span>
+                                                        }
+                                                    </td>
+                                                </tr>
+                                            }
+                                        }
+                                    }
+                                    else
+                                    {
+                                        <tr>
+                                            <td colspan="5" class="text-center text-muted">No transactions found for the selected period and document types.</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    </BodyContent>
+
+                    <FooterContent>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <strong>Total Debit: @CurrencyHelper.FormatNumber(transactionJournalData.TotalDebit)</strong>
+                            </div>
+                            <div class="col-md-6">
+                                <strong>Total Credit: @CurrencyHelper.FormatNumber(transactionJournalData.TotalCredit)</strong>
+                            </div>
+                        </div>
+                    </FooterContent>
+                </ReportTable>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    private DateTime fromDate;
+    private DateTime toDate = DateTime.Now;
+    private TransactionJournalResponse? transactionJournalData;
+    private bool isLoading = false;
+    private string errorMessage = string.Empty;
+    private DateTime? minDate;
+    
+    // Document type selection - default to all checked as shown in image
+    private Dictionary<string, bool> selectedDocumentTypes = new Dictionary<string, bool>
+    {
+        { "SV", true },  // Sales Journal
+        { "ES", true },  // Purchase Journal
+        { "SR", true },  // Sales Return Journal
+        { "JV", true },  // Journal Voucher
+        { "CP", false }, // Cash Payment Journal
+        { "CR", false }, // Cash Receipts Journal
+        { "BP", false }, // Bank Payment Journal
+        { "BR", false }, // Bank Receipts Journal
+        { "IB", false }  // Inter Bank Journal
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Get minimum date from session
+        minDate = await SessionService.GetMinDateAsync();
+        
+        // Set fromDate to session start_date if available, otherwise use current month start
+        if (minDate.HasValue)
+        {
+            fromDate = minDate.Value;
+        }
+        else
+        {
+            fromDate = new DateTime(DateTime.Now.Year, DateTime.Now.Month, 1);
+        }
+        
+        toDate = DateTime.Now;
+    }
+
+    private async Task LoadTransactionJournal()
+    {
+        if (fromDate > toDate)
+        {
+            errorMessage = "From date cannot be greater than Upto date.";
+            return;
+        }
+
+        // Check if at least one document type is selected
+        // Maintain order: SV, ES, SR, JV, CP, CR, BP, BR, IB (as they appear in UI)
+        var documentTypeOrder = new List<string> { "SV", "ES", "SR", "JV", "CP", "CR", "BP", "BR", "IB" };
+        var selectedTypes = documentTypeOrder
+            .Where(type => selectedDocumentTypes.ContainsKey(type) && selectedDocumentTypes[type])
+            .ToList();
+        
+        if (selectedTypes.Count == 0)
+        {
+            errorMessage = "Please select at least one document type.";
+            return;
+        }
+
+        isLoading = true;
+        errorMessage = string.Empty;
+        transactionJournalData = null;
+
+        try
+        {
+            transactionJournalData = await DataService.GetTransactionJournalAsync(fromDate, toDate, selectedTypes);
+            
+            if (!transactionJournalData.Success)
+            {
+                errorMessage = transactionJournalData.Message;
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"An error occurred while loading the transaction journal: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private void OnDocumentTypeChanged(string documentType, object? value)
+    {
+        if (value is bool checkedValue)
+        {
+            selectedDocumentTypes[documentType] = checkedValue;
+        }
+    }
+}
+

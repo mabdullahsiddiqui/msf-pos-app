@@ -1,0 +1,373 @@
+@page "/reports/ledger"
+@using pos_app.Client.Services
+@using pos_app.Client.Models
+@using pos_app.Client.Components.Shared
+@inject DataService DataService
+@inject SessionService SessionService
+@inject IJSRuntime JSRuntime
+
+<PageTitle>Account Ledger Report - POS System</PageTitle>
+
+<style>
+    .ledger-header {
+        background-color: #e0e0e0;
+        padding: 15px;
+        margin-bottom: 20px;
+        border-radius: 5px;
+    }
+    
+    .ledger-table th {
+        background-color: #e0e0e0;
+        font-weight: bold;
+        text-align: center;
+    }
+    
+    .ledger-table td {
+        text-align: right;
+    }
+    
+    .ledger-table td:nth-child(1),
+    .ledger-table td:nth-child(2),
+    .ledger-table td:nth-child(3) {
+        text-align: left;
+    }
+    
+    .ledger-footer {
+        background-color: #e0e0e0;
+        padding: 10px;
+        margin-top: 20px;
+        border-radius: 5px;
+        display: flex;
+        justify-content: space-between;
+    }
+    
+    .account-dropdown {
+        max-height: 200px;
+        overflow-y: auto;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        border-radius: 0 0 0.375rem 0.375rem;
+    }
+    
+    .account-item {
+        padding: 8px 12px;
+        cursor: pointer;
+        border-bottom: 1px solid #eee;
+    }
+    
+    .account-item:hover {
+        background-color: #f8f9fa;
+    }
+    
+    .account-item.selected {
+        background-color: #007bff;
+        color: white;
+    }
+    
+    .clear-search-btn:hover {
+        color: #dc3545 !important;
+        background-color: rgba(220, 53, 69, 0.1) !important;
+    }
+
+    .table-container {
+        overflow-x: auto;
+        max-width: 100%;
+        -webkit-overflow-scrolling: touch;
+        border: 1px solid #dee2e6;
+        border-radius: 0.375rem;
+    }
+    
+    /* Ensure dropdown is not clipped by parent containers */
+    .account-search-container {
+        overflow: visible !important;
+    }
+    
+    /* Additional dropdown styling for better visibility */
+    .account-dropdown {
+        z-index: 99999 !important;
+        position: absolute !important;
+        max-height: 300px !important;
+        overflow-y: auto !important;
+    }
+    
+    /* Ensure FilterCard doesn't clip dropdown */
+    .card-body {
+        overflow: visible !important;
+    }
+    
+    /* Ensure all parent containers allow overflow */
+    .container-fluid, .row, .col-md-4 {
+        overflow: visible !important;
+    }
+</style>
+
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+
+            <!-- Filter Card -->
+            <FilterCard Title="Report Filters" IconClass="fas fa-filter">
+                <div class="row g-3">
+                    <div class="col-md-4">
+                        <label class="form-label">Account</label>
+                        <div class="position-relative account-search-container">
+                            <input type="text" 
+                                   class="form-control pe-5" 
+                                   placeholder="Search accounts..." 
+                                   @bind="accountSearchTerm" 
+                                   @oninput="OnAccountSearchChanged"
+                                   @onfocus="@(() => ShowAccountDropdown = true)"
+                                   @onblur="HideAccountDropdown" />
+                            
+                            @if (!string.IsNullOrEmpty(accountSearchTerm))
+                            {
+                                <button type="button" 
+                                        class="btn btn-sm position-absolute top-50 end-0 translate-middle-y me-2 p-0 clear-search-btn" 
+                                        style="background: none; border: none; color: #6c757d; z-index: 10;"
+                                        @onclick="ClearSearch"
+                                        title="Clear search">
+                                    <i class="fas fa-times"></i>
+                                </button>
+                            }
+                            
+                            @if (ShowAccountDropdown && filteredAccounts.Any())
+                            {
+                                <div class="position-absolute w-100 account-dropdown" 
+                                     style="top: 100%; z-index: 99999; background: white; border: 1px solid #dee2e6; border-top: none; left: 0; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
+                                    @foreach (var account in filteredAccounts.Take(10))
+                                    {
+                                        <div class="account-item" 
+                                             @onclick="() => SelectAccount(account)"
+                                             @onmouseover="@(() => hoveredAccount = account.AccCode)"
+                                             @onmouseout="@(() => hoveredAccount = null)">
+                                            <strong>@account.AccCode.Trim()</strong> - @account.AccName.Trim()
+                                        </div>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    </div>
+                    <DateInput Label="From Date" Id="fromDate" @bind-Value="fromDate" MinDate="@minDate" />
+                    <DateInput Label="To Date" Id="toDate" @bind-Value="toDate" />
+                    <div class="col-md-2 d-flex align-items-end">
+                        <ActionButton Text="Generate Report" OnClick="GenerateReport" IsLoading="@isLoading" IsDisabled="@isLoading" AdditionalClass="w-100" />
+                    </div>
+                </div>
+            </FilterCard>
+
+            @if (ledgerResponse != null && ledgerResponse.Success)
+            {
+                <ReportTable FilterableColumns="@(new List<int> { 0, 1, 2 })">
+                    <HeaderContent>
+                        <h4 class="mb-3"><strong><em>A/C Ledger DATE TO DATE</em></strong></h4>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <strong>From:</strong> @ledgerResponse.FromDate.ToString("dd/MM/yyyy") 
+                                <strong>To Date:</strong> @ledgerResponse.ToDate.ToString("dd/MM/yyyy")
+                            </div>
+                            <div class="col-md-6">
+                                <strong>A/C Code:</strong> @ledgerResponse.AccountCode
+                                <strong>Name:</strong> @ledgerResponse.AccountName
+                            </div>
+                        </div>
+                    </HeaderContent>
+                    
+                    <SummaryCards>
+                        <SummaryCard Title="Total Debit" Value="@CurrencyHelper.FormatNumber(ledgerResponse.TotalDebit)" BgColor="danger" />
+                        <SummaryCard Title="Total Credit" Value="@CurrencyHelper.FormatNumber(ledgerResponse.TotalCredit)" BgColor="success" />
+                        <SummaryCard Title="Balance" Value="@CurrencyHelper.FormatNumber(ledgerResponse.Data.LastOrDefault()?.Balance)" BgColor="primary" />
+                        <SummaryCard Title="Total Entries" Value="@ledgerResponse.Data.Count().ToString()" BgColor="info" />
+                    </SummaryCards>
+
+
+                    <BodyContent>
+                        <table class="table table-bordered table-striped">
+                            <thead>
+                                <tr>
+                                    <th>Voucher No.</th>
+                                    <th>Date</th>
+                                    <th>Description</th>
+                                    <th>Debit</th>
+                                    <th>Credit</th>
+                                    <th>Balance</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @if (ledgerResponse.Data.Any())
+                                {
+                                    @foreach (var item in ledgerResponse.Data)
+                                    {
+                                        <tr>
+                                            <td>@item.VouchNo</td>
+                                            <td>@(item.VouchDate == DateTime.MinValue ? "" : item.VouchDate.ToString("dd/MM/yyyy"))</td>
+                                            <td>@item.Descript</td>
+                                            <td class="text-end">@(item.Debit > 0 ? CurrencyHelper.FormatNumber(item.Debit) : "0.00")</td>
+                                            <td class="text-end">@(item.Credit > 0 ? CurrencyHelper.FormatNumber(item.Credit) : "0.00")</td>
+                                            <td class="text-end">@CurrencyHelper.FormatNumber(item.Balance) @item.BalType</td>
+                                        </tr>
+                                    }
+                                }
+                                else
+                                {
+                                    <tr>
+                                        <td colspan="6" class="text-center text-muted">No transactions found for the selected period.</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </BodyContent>
+
+                    <FooterContent>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <strong>Total Debit: @CurrencyHelper.FormatNumber(ledgerResponse.TotalDebit)</strong>
+                            </div>
+                            <div class="col-md-6">
+                                <strong>Total Credit: @CurrencyHelper.FormatNumber(ledgerResponse.TotalCredit)</strong>
+                            </div>
+                        </div>
+                    </FooterContent>
+                </ReportTable>
+            }
+            else if (ledgerResponse != null && !ledgerResponse.Success)
+            {
+                <div class="alert alert-danger" role="alert">
+                    <i class="fas fa-exclamation-triangle"></i> @ledgerResponse.Message
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    private LedgerReportResponse? ledgerResponse;
+    private List<ClientCustomer> allAccounts = new();
+    private List<ClientCustomer> filteredAccounts = new();
+    private string accountSearchTerm = "";
+    private string selectedAccountCode = "";
+    private string selectedAccountDisplay = "";
+    private string? hoveredAccount = null;
+    private bool ShowAccountDropdown = false;
+    private bool isLoading = false;
+    
+    private DateTime fromDate;
+    private DateTime toDate = DateTime.Now;
+    private DateTime? minDate;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Get minimum date from session
+        minDate = await SessionService.GetMinDateAsync();
+        
+        // Set fromDate to session start_date if available, otherwise use current month start
+        if (minDate.HasValue)
+        {
+            fromDate = minDate.Value;
+        }
+        else
+        {
+            fromDate = new DateTime(DateTime.Now.Year, DateTime.Now.Month, 1);
+        }
+        
+        await LoadAccounts();
+    }
+
+    private async Task LoadAccounts()
+    {
+        try
+        {
+            allAccounts = await DataService.GetCustomersAsync();
+            filteredAccounts = allAccounts.ToList();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading accounts: {ex.Message}");
+        }
+    }
+
+    private void OnAccountSearchChanged(ChangeEventArgs e)
+    {
+        accountSearchTerm = e.Value?.ToString() ?? "";
+        
+        // Don't filter if we have a selected account and the search term matches it
+        if (!string.IsNullOrEmpty(selectedAccountCode) && accountSearchTerm == selectedAccountDisplay)
+        {
+            filteredAccounts = allAccounts.ToList();
+            ShowAccountDropdown = false;
+        }
+        else
+        {
+            if (string.IsNullOrEmpty(accountSearchTerm))
+            {
+                filteredAccounts = allAccounts.ToList();
+            }
+            else
+            {
+                var searchLower = accountSearchTerm.Trim().ToLower();
+                filteredAccounts = allAccounts.Where(a => 
+                    a.AccCode.Trim().ToLower().Contains(searchLower) ||
+                    a.AccName.Trim().ToLower().Contains(searchLower)
+                ).ToList();
+            }
+            
+            ShowAccountDropdown = true;
+        }
+        
+        StateHasChanged();
+    }
+
+    private void SelectAccount(ClientCustomer account)
+    {
+        selectedAccountCode = account.AccCode;
+        selectedAccountDisplay = $"{account.AccCode.Trim()} - {account.AccName.Trim()}";
+        accountSearchTerm = selectedAccountDisplay;
+        ShowAccountDropdown = false;
+        StateHasChanged();
+    }
+
+    private async void HideAccountDropdown()
+    {
+        await Task.Delay(200); // Small delay to allow click events
+        ShowAccountDropdown = false;
+        StateHasChanged();
+    }
+
+    private void ClearSearch()
+    {
+        accountSearchTerm = "";
+        selectedAccountCode = "";
+        selectedAccountDisplay = "";
+        filteredAccounts = allAccounts.ToList();
+        ShowAccountDropdown = false;
+        StateHasChanged();
+    }
+
+    private async Task GenerateReport()
+    {
+        if (string.IsNullOrEmpty(selectedAccountCode))
+        {
+            await JSRuntime.InvokeVoidAsync("alert", "Please select an account.");
+            return;
+        }
+
+        isLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            ledgerResponse = await DataService.GetAccountLedgerAsync(selectedAccountCode, fromDate, toDate);
+        }
+        catch (Exception ex)
+        {
+            ledgerResponse = new LedgerReportResponse
+            {
+                Success = false,
+                Message = $"Error generating report: {ex.Message}"
+            };
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+}

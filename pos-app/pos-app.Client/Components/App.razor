@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <base href="/" />
+    <link rel="stylesheet" href="bootstrap/bootstrap.min.css" />
+    <link rel="stylesheet" href="app.css" />
+    <link rel="stylesheet" href="pos-blazor.styles.css" />
+    <link rel="icon" type="image/png" href="favicon.png" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" />
+    <HeadOutlet />
+</head>
+
+<body>
+    <Routes />
+    <script src="_framework/blazor.web.js"></script>
+    <script src="js/file-download.js"></script>
+    <script src="js/date-input-helper.js"></script>
+    <script src="js/table-filter.js"></script>
+    <script>
+        window.downloadFile = window.downloadFile || function (filename, content, contentType) {
+            const blob = new Blob([content], { type: contentType });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(url);
+        };
+        
+        // Ensure cursor position functions are available
+        window.getSelectionStart = window.getSelectionStart || function (element) {
+            if (element && element.selectionStart !== undefined) {
+                return element.selectionStart;
+            }
+            return 0;
+        };
+        
+        window.getSelectionEnd = window.getSelectionEnd || function (element) {
+            if (element && element.selectionEnd !== undefined) {
+                return element.selectionEnd;
+            }
+            return 0;
+        };
+        
+        window.setSelectionRange = window.setSelectionRange || function (element, start, end) {
+            if (element && element.setSelectionRange) {
+                element.focus();
+                element.setSelectionRange(start, end);
+            }
+        };
+        
+        window.getClipboardText = window.getClipboardText || async function () {
+            try {
+                const text = await navigator.clipboard.readText();
+                return text || "";
+            } catch {
+                return "";
+            }
+        };
+    </script>
+    <style>
+        .sortable {
+            cursor: pointer;
+            user-select: none;
+        }
+        .sortable:hover {
+            background-color: rgba(255, 255, 255, 0.1);
+        }
+        .table-hover tbody tr:hover {
+            background-color: rgba(0, 123, 255, 0.05);
+        }
+    </style>
+</body>
+
+</html>

@@ -1,0 +1,41 @@
+@using Microsoft.AspNetCore.Components
+
+<div class="row summary-cards">
+    @ChildContent
+</div>
+
+<style>
+    /* Ensure all summary cards have equal height */
+    .summary-cards {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: stretch;
+    }
+    
+    .summary-cards .col-md-3 {
+        display: flex;
+        margin-bottom: 1rem;
+        align-items: stretch;
+    }
+    
+    .summary-cards .card {
+        height: 100% !important;
+        display: flex !important;
+        flex-direction: column !important;
+        width: 100% !important;
+        min-height: 120px !important;
+    }
+    
+    .summary-cards .card-body {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        text-align: center;
+    }
+</style>
+
+@code {
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

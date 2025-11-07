@@ -1,0 +1,1040 @@
+@inherits LayoutComponentBase
+@implements IDisposable
+@namespace pos_app.Client.Components.Layout
+@using pos_app.Client.Services
+@using pos_app.Client.Models
+@inject AuthService AuthService
+@inject NavigationManager Navigation
+@inject IJSRuntime JSRuntime
+
+@if (isLoading)
+{
+    <div class="d-flex justify-content-center align-items-center" style="height: 100vh;">
+        <div class="spinner-border text-primary" role="status">
+            <span class="visually-hidden">Loading...</span>
+        </div>
+    </div>
+}
+else if (!isAuthenticated)
+{
+    <div class="d-flex justify-content-center align-items-center" style="height: 100vh;">
+        <div class="text-center">
+            <h4>Redirecting to login...</h4>
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+        </div>
+    </div>
+}
+else
+{
+    <div class="min-vh-100 d-flex">
+    <!-- Sidebar -->
+    <div class="sidebar bg-dark text-white">
+        <div class="sidebar-header p-3">
+            <h5><i class="fas fa-store"></i> POS System</h5>
+        </div>
+        <nav class="sidebar-nav d-flex flex-column h-100">
+            <ul class="nav flex-column flex-grow-1">
+                <!-- Dashboard -->
+                <li class="nav-item">
+                    <a class="nav-link @GetActiveClass("/dashboard")" href="/dashboard">
+                        <i class="fas fa-tachometer-alt"></i> Dashboard
+                    </a>
+                </li>
+
+                <!-- Financial Reports -->
+                <li class="nav-item">
+                    <div class="nav-link group-header" @onclick="ToggleFinancialReports">
+                        Financial Reports
+                        @if (isFinancialReportsExpanded)
+                        {
+                            <i class="fas fa-chevron-down group-chevron"></i>
+                        }
+                        else
+                        {
+                            <i class="fas fa-chevron-right group-chevron"></i>
+                        }
+                    </div>
+                    @if (isFinancialReportsExpanded)
+                    {
+                        <ul class="submenu">
+                            <li class="nav-item">
+                                <a class="nav-link submenu-link @GetActiveClass("/reports/ledger")" href="/reports/ledger">
+                                    <i class="fas fa-journal-whills"></i> A/C Ledger
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link submenu-link @GetActiveClass("/reports/cash-book")" href="/reports/cash-book">
+                                    <i class="fas fa-book-open"></i> Cash Book
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link submenu-link @GetActiveClass("/reports/journal-book")" href="/reports/journal-book">
+                                    <i class="fas fa-journal-whills"></i> Journal Book
+                                </a>
+                            </li>
+                            <!-- Bank Book - Page not created yet
+                            <li class="nav-item">
+                                <a class="nav-link submenu-link @GetActiveClass("#")" href="#">
+                                    <i class="fas fa-university"></i> Bank Book
+                                </a>
+                            </li>
+                            -->
+                            <li class="nav-item">
+                                <a class="nav-link submenu-link @GetActiveClass("/reports/account-inquiry")" href="/reports/account-inquiry">
+                                    <i class="fas fa-search"></i> Account Inquiry
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link submenu-link @GetActiveClass("/reports/trial-balance")" href="/reports/trial-balance">
+                                    <i class="fas fa-balance-scale"></i> Trial Balance
+                                </a>
+                            </li>
+                            <!-- Profit / Loss - Page not created yet
+                            <li class="nav-item">
+                                <a class="nav-link submenu-link @GetActiveClass("#")" href="#">
+                                    <i class="fas fa-chart-line"></i> Profit / Loss
+                                </a>
+                            </li>
+                            -->
+                            <li class="nav-item">
+                                <a class="nav-link submenu-link @GetActiveClass("/reports/monthly-account-balance")" href="/reports/monthly-account-balance">
+                                    <i class="fas fa-calendar-alt"></i> Month Wise Report
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link submenu-link @GetActiveClass("/reports/transaction-journal")" href="/reports/transaction-journal">
+                                    <i class="fas fa-receipt"></i> Transaction Journal
+                                </a>
+                            </li>
+                            <!-- Cash / Bank Transaction - Page not created yet
+                            <li class="nav-item">
+                                <a class="nav-link submenu-link @GetActiveClass("#")" href="#">
+                                    <i class="fas fa-exchange-alt"></i> Cash / Bank Transaction
+                                </a>
+                            </li>
+                            -->
+                            <li class="nav-item">
+                                <a class="nav-link submenu-link @GetActiveClass("/reports/three-trial-balance")" href="/reports/three-trial-balance">
+                                    <i class="fas fa-file-alt"></i> 3 Col. Trial Balance
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link submenu-link @GetActiveClass("/reports/customer-aging")" href="/reports/customer-aging">
+                                    <i class="fas fa-user-clock"></i> Customer Aging
+                                </a>
+                            </li>
+                            <!-- Mark Up Calculator - Page not created yet
+                            <li class="nav-item">
+                                <a class="nav-link submenu-link @GetActiveClass("#")" href="#">
+                                    <i class="fas fa-calculator"></i> Mark Up Calculator
+                                </a>
+                            </li>
+                            -->
+                            <li class="nav-item">
+                                <a class="nav-link submenu-link @GetActiveClass("/reports/supplier-aging")" href="/reports/supplier-aging">
+                                    <i class="fas fa-truck"></i> Supplier's Aging
+                                </a>
+                            </li>
+                            <!-- C.E.O. Report - Page not created yet
+                            <li class="nav-item">
+                                <a class="nav-link submenu-link @GetActiveClass("#")" href="#">
+                                    <i class="fas fa-briefcase"></i> C.E.O. Report
+                                </a>
+                            </li>
+                            -->
+                            <!-- Sales/Expenses Chart - Page not created yet
+                            <li class="nav-item">
+                                <a class="nav-link submenu-link @GetActiveClass("#")" href="#">
+                                    <i class="fas fa-chart-bar"></i> Sales/Expenses Chart
+                                </a>
+                            </li>
+                            -->
+                            <!-- Out of Balance - Page not created yet
+                            <li class="nav-item">
+                                <a class="nav-link submenu-link @GetActiveClass("#")" href="#">
+                                    <i class="fas fa-exclamation-triangle"></i> Out of Balance
+                                </a>
+                            </li>
+                            -->
+                            <!-- Ledger Missing Entries - Page not created yet
+                            <li class="nav-item">
+                                <a class="nav-link submenu-link @GetActiveClass("#")" href="#">
+                                    <i class="fas fa-question-circle"></i> Ledger Missing Entries
+                                </a>
+                            </li>
+                            -->
+                        </ul>
+                    }
+                </li>
+
+                <!-- Listing -->
+                <li class="nav-item">
+                    <div class="nav-link group-header" @onclick="ToggleListing">
+                        Listing
+                        @if (isListingExpanded)
+                        {
+                            <i class="fas fa-chevron-down group-chevron"></i>
+                        }
+                        else
+                        {
+                            <i class="fas fa-chevron-right group-chevron"></i>
+                        }
+                    </div>
+                    @if (isListingExpanded)
+                    {
+                        <ul class="submenu">
+                            <li class="nav-item">
+                                <a class="nav-link submenu-link" href="#">
+                                    <i class="fas fa-file-alt"></i> A/C Chart List
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link submenu-link" href="#">
+                                    <i class="fas fa-list-alt"></i> Item Chart List
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link submenu-link" href="#">
+                                    <i class="fas fa-search"></i> Item Inquiry
+                                </a>
+                            </li>
+                        </ul>
+                    }
+                </li>
+
+                <!-- Heap -->
+                <li class="nav-item">
+                    <div class="nav-link group-header" @onclick="ToggleHeap">
+                        Heap
+                        @if (isHeapExpanded)
+                        {
+                            <i class="fas fa-chevron-down group-chevron"></i>
+                        }
+                        else
+                        {
+                            <i class="fas fa-chevron-right group-chevron"></i>
+                        }
+                    </div>
+                    @if (isHeapExpanded)
+                    {
+                        <ul class="submenu">
+                            <li class="nav-item">
+                                <a class="nav-link submenu-link" href="#">
+                                    <i class="fas fa-chart-line"></i> Heap Wise Stock
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link submenu-link" href="#">
+                                    <i class="fas fa-truck"></i> Heap Wise Arrival
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link submenu-link" href="#">
+                                    <i class="fas fa-shopping-cart"></i> Heap Wise Purchases
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link submenu-link" href="#">
+                                    <i class="fas fa-box-open"></i> Heap Wise Issuance
+                                </a>
+                            </li>
+                        </ul>
+                    }
+                </li>
+
+                <!-- Arrival Reports -->
+                <li class="nav-item">
+                    <div class="nav-link group-header" @onclick="ToggleArrivalReports">
+                        Arrival Reports
+                        @if (isArrivalReportsExpanded)
+                        {
+                            <i class="fas fa-chevron-down group-chevron"></i>
+                        }
+                        else
+                        {
+                            <i class="fas fa-chevron-right group-chevron"></i>
+                        }
+                    </div>
+                    @if (isArrivalReportsExpanded)
+                    {
+                        <ul class="submenu">
+                            <li class="nav-item">
+                                <a class="nav-link submenu-link" href="#">
+                                    <i class="fas fa-book"></i> Arrival Book
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link submenu-link" href="#">
+                                    <i class="fas fa-truck"></i> Supplier Wise Arrival
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link submenu-link" href="#">
+                                    <i class="fas fa-cube"></i> Product Wise Arrival
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link submenu-link" href="#">
+                                    <i class="fas fa-layer-group"></i> Heap Wise Arrival
+                                </a>
+                            </li>
+                        </ul>
+                    }
+                </li>
+
+                <!-- Purchase Reports -->
+                <li class="nav-item">
+                    <div class="nav-link group-header" @onclick="TogglePurchaseReports">
+                        Purchase Reports
+                        @if (isPurchaseReportsExpanded)
+                        {
+                            <i class="fas fa-chevron-down group-chevron"></i>
+                        }
+                        else
+                        {
+                            <i class="fas fa-chevron-right group-chevron"></i>
+                        }
+                    </div>
+                    @if (isPurchaseReportsExpanded)
+                    {
+                        <ul class="submenu">
+                            <li class="nav-item">
+                                <a class="nav-link submenu-link" href="#">
+                                    <i class="fas fa-book"></i> Purchase Journal
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link submenu-link" href="#">
+                                    <i class="fas fa-clipboard-list"></i> Purchase Register
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link submenu-link" href="#">
+                                    <i class="fas fa-journal-whills"></i> Item Pur. Ledger
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link submenu-link" href="#">
+                                    <i class="fas fa-file-alt"></i> Item Pur. Summary
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link submenu-link" href="#">
+                                    <i class="fas fa-clipboard-list"></i> Item Purchase Register
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link submenu-link" href="#">
+                                    <i class="fas fa-journal-whills"></i> Supplier Pur. ledger
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link submenu-link" href="#">
+                                    <i class="fas fa-file-alt"></i> Supplier Pur. Summary
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link submenu-link" href="#">
+                                    <i class="fas fa-receipt"></i> Supplier Tax Ledger
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link submenu-link" href="#">
+                                    <i class="fas fa-layer-group"></i> Heap Wise Purchases
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link submenu-link" href="#">
+                                    <i class="fas fa-user-tie"></i> Broker Purchase Report
+                                </a>
+                            </li>
+                        </ul>
+                    }
+                </li>
+
+                <!-- Production Reports -->
+                <li class="nav-item">
+                    <div class="nav-link group-header" @onclick="ToggleProductionReports">
+                        Production Reports
+                        @if (isProductionReportsExpanded)
+                        {
+                            <i class="fas fa-chevron-down group-chevron"></i>
+                        }
+                        else
+                        {
+                            <i class="fas fa-chevron-right group-chevron"></i>
+                        }
+                    </div>
+                    @if (isProductionReportsExpanded)
+                    {
+                        <ul class="submenu">
+                            <li class="nav-item">
+                                <a class="nav-link submenu-link" href="#">
+                                    <i class="fas fa-tachometer-alt"></i> Production DashBoard
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link submenu-link" href="#">
+                                    <i class="fas fa-calendar-day"></i> Daily Production
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link submenu-link" href="#">
+                                    <i class="fas fa-tags"></i> Batch Wise Production
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link submenu-link" href="#">
+                                    <i class="fas fa-file-alt"></i> Production Summary
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link submenu-link" href="#">
+                                    <i class="fas fa-box-open"></i> Raw Material issue
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link submenu-link" href="#">
+                                    <i class="fas fa-layer-group"></i> Heap Wise Issue
+                                </a>
+                            </li>
+                        </ul>
+                    }
+                </li>
+
+                <!-- Sales Reports -->
+                <li class="nav-item">
+                    <div class="nav-link group-header" @onclick="ToggleSalesReports">
+                        Sales Reports
+                        @if (isSalesReportsExpanded)
+                        {
+                            <i class="fas fa-chevron-down group-chevron"></i>
+                        }
+                        else
+                        {
+                            <i class="fas fa-chevron-right group-chevron"></i>
+                        }
+                    </div>
+                    @if (isSalesReportsExpanded)
+                    {
+                        <ul class="submenu">
+                            <li class="nav-item">
+                                <a class="nav-link submenu-link" href="#">
+                                    <i class="fas fa-book"></i> Sales Journal
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link submenu-link" href="#">
+                                    <i class="fas fa-clipboard-list"></i> Sales Register
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link submenu-link" href="#">
+                                    <i class="fas fa-file-alt"></i> Item Sales Summary
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link submenu-link" href="#">
+                                    <i class="fas fa-journal-whills"></i> Item Sales Ledger
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link submenu-link" href="#">
+                                    <i class="fas fa-journal-whills"></i> Customer Sales Ledger
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link submenu-link" href="#">
+                                    <i class="fas fa-file-alt"></i> Customer Sale Summary
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link submenu-link" href="#">
+                                    <i class="fas fa-user-tie"></i> Broker Sales Report
+                                </a>
+                            </li>
+                        </ul>
+                    }
+                </li>
+            </ul>
+        </nav>
+    </div>
+
+    <!-- Main Content -->
+    <div class="main-content flex-grow-1">
+        <div class="topbar bg-white shadow-sm">
+            <div class="d-flex justify-content-between align-items-center p-3">
+                <div class="page-title">
+                    <h4 class="mb-0 text-primary">
+                        @GetPageTitle()
+                    </h4>
+                </div>
+                <div class="d-flex align-items-center">
+                    <span class="text-muted me-3">Welcome, @(currentUser?.ContactPerson ?? currentUser?.Email ?? "User")</span>
+                    <div class="dropdown">
+                        <button class="btn btn-outline-secondary dropdown-toggle" type="button" @onclick="ToggleDropdown" aria-expanded="@isDropdownOpen">
+                            <i class="fas fa-user-circle me-2"></i>
+                            <span class="d-none d-md-inline">Account</span>
+                        </button>
+                        <ul class="dropdown-menu dropdown-menu-end @(isDropdownOpen ? "show" : "")" style="@(isDropdownOpen ? "display: block;" : "display: none;")">
+                            <li>
+                                <h6 class="dropdown-header">
+                                    <i class="fas fa-user me-2"></i>Account Management
+                                </h6>
+                            </li>
+                            <li>
+                                <a class="dropdown-item" href="/user/profile" @onclick="CloseDropdown">
+                                    <i class="fas fa-user-edit me-2"></i>View Profile
+                                </a>
+                            </li>
+                            <li>
+                                <a class="dropdown-item" href="/user/profile#change-password" @onclick="CloseDropdown">
+                                    <i class="fas fa-key me-2"></i>Change Password
+                                </a>
+                            </li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li>
+                                <h6 class="dropdown-header">
+                                    <i class="fas fa-cog me-2"></i>Settings
+                                </h6>
+                            </li>
+                            <li>
+                                <a class="dropdown-item" href="/user/profile#settings" @onclick="CloseDropdown">
+                                    <i class="fas fa-cog me-2"></i>Account Settings
+                                </a>
+                            </li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li>
+                                <h6 class="dropdown-header">
+                                    <i class="fas fa-info-circle me-2"></i>Support
+                                </h6>
+                            </li>
+                            <li>
+                                <a class="dropdown-item" href="#" @onclick="ShowHelp">
+                                    <i class="fas fa-question-circle me-2"></i>Help & Support
+                                </a>
+                            </li>
+                            <li>
+                                <a class="dropdown-item" href="#" @onclick="ShowAbout">
+                                    <i class="fas fa-info-circle me-2"></i>About
+                                </a>
+                            </li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li>
+                                <a class="dropdown-item text-danger" href="#" @onclick="Logout">
+                                    <i class="fas fa-sign-out-alt me-2"></i>Logout
+                                </a>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="content-area p-4">
+            @ChildContent
+        </div>
+    </div>
+    </div>
+}
+
+<style>
+    .sidebar {
+        width: 250px;
+        min-height: 100vh;
+        position: fixed;
+        left: 0;
+        top: 0;
+        background: linear-gradient(180deg, #2c3e50 0%, #34495e 100%);
+        z-index: 1040;
+    }
+
+    .sidebar-header {
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .sidebar-header h5 {
+        margin: 0;
+        font-weight: 600;
+    }
+
+    .sidebar-nav {
+        overflow-y: auto;
+        overflow-x: hidden;
+        max-height: calc(100vh - 60px);
+    }
+
+    .sidebar-nav::-webkit-scrollbar {
+        width: 6px;
+    }
+
+    .sidebar-nav::-webkit-scrollbar-track {
+        background: rgba(0, 0, 0, 0.2);
+    }
+
+    .sidebar-nav::-webkit-scrollbar-thumb {
+        background: rgba(255, 255, 255, 0.3);
+        border-radius: 3px;
+    }
+
+    .sidebar-nav::-webkit-scrollbar-thumb:hover {
+        background: rgba(255, 255, 255, 0.5);
+    }
+
+    .nav-link {
+        color: rgba(255, 255, 255, 0.8) !important;
+        padding: 12px 20px;
+        border-radius: 6px;
+        margin: 2px 8px;
+        transition: all 0.3s ease;
+    }
+
+    .nav-link:hover {
+        background-color: rgba(255, 255, 255, 0.1);
+        color: white !important;
+        transform: translateX(5px);
+    }
+
+    .nav-link.active {
+        background-color: rgba(52, 152, 219, 0.3);
+        color: white !important;
+        border-left: 3px solid #3498db;
+        font-weight: 600;
+    }
+
+    .nav-link.active:hover {
+        background-color: rgba(52, 152, 219, 0.4);
+    }
+
+    .submenu-link.active {
+        background-color: rgba(52, 152, 219, 0.3);
+        color: white !important;
+        border-left: 3px solid #3498db;
+        font-weight: 600;
+        padding-left: 37px !important;
+    }
+
+    .submenu-link.active:hover {
+        background-color: rgba(52, 152, 219, 0.4);
+    }
+
+    .nav-link i {
+        width: 20px;
+        margin-right: 10px;
+    }
+
+    .group-header {
+        cursor: pointer;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        user-select: none;
+    }
+
+    .group-header:hover {
+        background-color: rgba(255, 255, 255, 0.1);
+        color: white !important;
+    }
+
+    .group-chevron {
+        font-size: 0.75rem;
+        margin-left: auto;
+        transition: transform 0.3s ease;
+        width: auto;
+        margin-right: 0;
+    }
+
+    .submenu {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+        background-color: rgba(0, 0, 0, 0.2);
+        border-radius: 0 0 6px 6px;
+        overflow: hidden;
+        animation: slideDown 0.3s ease;
+    }
+
+    @@keyframes slideDown {
+        from {
+            opacity: 0;
+            max-height: 0;
+        }
+        to {
+            opacity: 1;
+            max-height: 1000px;
+        }
+    }
+
+    .submenu-link {
+        padding-left: 40px !important;
+        font-size: 0.9rem;
+        margin: 0 !important;
+        border-radius: 0;
+    }
+
+    .submenu-link:hover {
+        background-color: rgba(255, 255, 255, 0.15);
+        transform: translateX(3px);
+    }
+
+    .submenu .nav-item {
+        border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .submenu .nav-item:last-child {
+        border-bottom: none;
+    }
+
+    .main-content {
+        display: flex;
+        flex-direction: column;
+        margin-left: 250px;
+        z-index: 1;
+        overflow-x: hidden;
+        max-width: calc(100vw - 250px);
+    }
+
+    .topbar {
+        border-bottom: 1px solid #dee2e6;
+        position: sticky;
+        top: 0;
+        z-index: 1000;
+    }
+
+    .content-area {
+        min-height: calc(100vh - 80px);
+        overflow-x: hidden;
+        max-width: 100%;
+    }
+
+    .dropdown {
+        position: relative;
+    }
+
+    .dropdown-menu {
+        position: absolute;
+        top: 100%;
+        right: 0;
+        z-index: 1000;
+        margin-top: 0.125rem;
+        min-width: 200px;
+        box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+        border: 1px solid rgba(0, 0, 0, 0.15);
+        border-radius: 0.375rem;
+    }
+
+    .dropdown-menu.show {
+        display: block !important;
+    }
+
+    .dropdown-header {
+        font-size: 0.75rem;
+        font-weight: 600;
+        color: #6c757d;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        padding: 0.5rem 1rem 0.25rem;
+    }
+
+    .dropdown-item {
+        padding: 0.5rem 1rem;
+        color: #212529;
+        text-decoration: none;
+        display: flex;
+        align-items: center;
+        transition: background-color 0.15s ease-in-out;
+    }
+
+    .dropdown-item:hover {
+        background-color: #f8f9fa;
+        color: #212529;
+    }
+
+    .dropdown-item.text-danger:hover {
+        background-color: #f8d7da;
+        color: #721c24;
+    }
+
+    .dropdown-divider {
+        margin: 0.5rem 0;
+        border-top: 1px solid #dee2e6;
+    }
+
+    .btn-outline-secondary {
+        border-color: #6c757d;
+        color: #6c757d;
+    }
+
+    .btn-outline-secondary:hover {
+        background-color: #6c757d;
+        border-color: #6c757d;
+        color: white;
+    }
+</style>
+
+@code {
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    
+    private bool isLoading = true;
+    private bool isAuthenticated = false;
+    private bool isDropdownOpen = false;
+    private UserProfileInfo? currentUser;
+    
+    // Expandable group states
+    private bool isFinancialReportsExpanded = false;
+    private bool isListingExpanded = false;
+    private bool isHeapExpanded = false;
+    private bool isArrivalReportsExpanded = false;
+    private bool isPurchaseReportsExpanded = false;
+    private bool isProductionReportsExpanded = false;
+    private bool isSalesReportsExpanded = false;
+    
+    // Toggle methods for expandable groups
+    private void ToggleFinancialReports()
+    {
+        isFinancialReportsExpanded = !isFinancialReportsExpanded;
+        StateHasChanged();
+    }
+    
+    private void ToggleListing()
+    {
+        isListingExpanded = !isListingExpanded;
+        StateHasChanged();
+    }
+    
+    private void ToggleHeap()
+    {
+        isHeapExpanded = !isHeapExpanded;
+        StateHasChanged();
+    }
+    
+    private void ToggleArrivalReports()
+    {
+        isArrivalReportsExpanded = !isArrivalReportsExpanded;
+        StateHasChanged();
+    }
+    
+    private void TogglePurchaseReports()
+    {
+        isPurchaseReportsExpanded = !isPurchaseReportsExpanded;
+        StateHasChanged();
+    }
+    
+    private void ToggleProductionReports()
+    {
+        isProductionReportsExpanded = !isProductionReportsExpanded;
+        StateHasChanged();
+    }
+    
+    private void ToggleSalesReports()
+    {
+        isSalesReportsExpanded = !isSalesReportsExpanded;
+        StateHasChanged();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await CheckAuthentication();
+            Navigation.LocationChanged += OnLocationChanged;
+            CheckAndExpandActiveGroups();
+        }
+    }
+
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
+    {
+        CheckAndExpandActiveGroups();
+        StateHasChanged();
+    }
+
+    private void CheckAndExpandActiveGroups()
+    {
+        var currentPath = Navigation.Uri.ToLower();
+        
+        // Check if any financial report is active
+        if (currentPath.Contains("/reports/ledger") || 
+            currentPath.Contains("/reports/cash-book") ||
+            currentPath.Contains("/reports/journal-book") ||
+            currentPath.Contains("/reports/account-inquiry") ||
+            currentPath.Contains("/reports/trial-balance") ||
+            currentPath.Contains("/reports/monthly-account-balance") ||
+            currentPath.Contains("/reports/transaction-journal") ||
+            currentPath.Contains("/reports/three-trial-balance") ||
+            currentPath.Contains("/reports/customer-aging") ||
+            currentPath.Contains("/reports/supplier-aging"))
+        {
+            isFinancialReportsExpanded = true;
+        }
+    }
+
+    private string GetActiveClass(string path)
+    {
+        if (path == "#") return "";
+        
+        var currentPath = Navigation.Uri.ToLower();
+        var normalizedPath = path.ToLower();
+        
+        // For exact dashboard match
+        if (normalizedPath == "/dashboard")
+        {
+            return currentPath == "/dashboard" || currentPath == "/dashboard/" ? "active" : "";
+        }
+        
+        // For report paths, check if current path contains the report path
+        if (currentPath.Contains(normalizedPath) && normalizedPath != "/dashboard")
+        {
+            return "active";
+        }
+        
+        return "";
+    }
+
+    private async Task CheckAuthentication()
+    {
+        try
+        {
+            Console.WriteLine("UserMainLayout: Starting authentication check...");
+            
+            isAuthenticated = await AuthService.IsAuthenticatedAsync();
+            
+            if (isAuthenticated)
+            {
+                Console.WriteLine("UserMainLayout: User is authenticated, loading profile...");
+                await LoadUserProfile();
+            }
+            else
+            {
+                Console.WriteLine("UserMainLayout: User not authenticated, redirecting to login");
+                Navigation.NavigateTo("/login", forceLoad: true);
+                return;
+            }
+            
+            isLoading = false;
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"UserMainLayout: Authentication check error: {ex.Message}");
+            isLoading = false;
+            Navigation.NavigateTo("/login", forceLoad: true);
+        }
+    }
+
+    private async Task LoadUserProfile()
+    {
+        try
+        {
+            var response = await AuthService.GetProfileAsync();
+            if (response.Success && response.Data != null)
+            {
+                currentUser = response.Data;
+                Console.WriteLine($"UserMainLayout: Loaded profile for {currentUser.Username ?? currentUser.Email}");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"UserMainLayout: Error loading profile: {ex.Message}");
+        }
+    }
+
+    public async Task RefreshUserProfile()
+    {
+        await LoadUserProfile();
+        StateHasChanged();
+    }
+
+    private async Task Logout()
+    {
+        try
+        {
+            Console.WriteLine("UserMainLayout: Starting logout process...");
+            CloseDropdown();
+            await AuthService.LogoutAsync();
+            Navigation.NavigateTo("/login", forceLoad: true);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"UserMainLayout: Logout error: {ex.Message}");
+            Navigation.NavigateTo("/login", forceLoad: true);
+        }
+    }
+
+    private async Task ShowHelp()
+    {
+        try
+        {
+            CloseDropdown();
+            await JSRuntime.InvokeVoidAsync("alert", 
+                "POS System Help\n\n" +
+                "• Dashboard: View your business overview and key metrics\n" +
+                "• Customer Management: Manage your customer database\n" +
+                "• Trial Balance: Generate financial reports\n" +
+                "• Database Connections: Manage your data connections\n\n" +
+                "For additional support, contact your system administrator.");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"ShowHelp error: {ex.Message}");
+        }
+    }
+
+    private async Task ShowAbout()
+    {
+        try
+        {
+            CloseDropdown();
+            await JSRuntime.InvokeVoidAsync("alert", 
+                "POS System\n\n" +
+                "Version: 1.0.0\n" +
+                "Built with: Blazor Server\n" +
+                "Database: SQL Server\n\n" +
+                "© 2024 POS System. All rights reserved.");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"ShowAbout error: {ex.Message}");
+        }
+    }
+
+    private void ToggleDropdown()
+    {
+        isDropdownOpen = !isDropdownOpen;
+        StateHasChanged();
+    }
+
+    private void CloseDropdown()
+    {
+        isDropdownOpen = false;
+        StateHasChanged();
+    }
+
+    private string GetPageTitle()
+    {
+        var currentPath = Navigation.Uri;
+        
+        return currentPath switch
+        {
+            var path when path.Contains("/dashboard") => "Dashboard",
+            var path when path.Contains("/reports/trial-balance") => "Trial Balance Report",
+            var path when path.Contains("/reports/three-trial-balance") => "Three Trial Balance Report",
+                var path when path.Contains("/reports/monthly-account-balance") => "Month Wise Report",
+            var path when path.Contains("/reports/ledger") => "Ledger Report",
+            var path when path.Contains("/reports/cash-book") => "Cash Book Report",
+            var path when path.Contains("/reports/journal-book") => "Journal Book Report",
+            var path when path.Contains("/reports/transaction-journal") => "Transaction Journal Report",
+            var path when path.Contains("/reports/customer-aging") => "Customer Aging Report",
+            var path when path.Contains("/reports/supplier-aging") => "Supplier Aging Report",
+            var path when path.Contains("/user/profile") => "User Profile",
+            var path when path.Contains("/user/settings") => "User Settings",
+            _ => "POS System"
+        };
+    }
+
+    public void Dispose()
+    {
+        Navigation.LocationChanged -= OnLocationChanged;
+    }
+}

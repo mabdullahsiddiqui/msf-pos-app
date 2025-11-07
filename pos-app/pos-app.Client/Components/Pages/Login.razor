@@ -1,0 +1,113 @@
+@page "/login"
+@rendermode InteractiveWebAssembly
+@layout AuthLayout
+@using pos_app.Client.Models
+@using pos_app.Client.Services
+@using pos_app.Client.Components.Layout
+@inject AuthService AuthService
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+
+<PageTitle>User Login</PageTitle>
+
+<div class="card shadow">
+    <div class="card-header text-white text-center">
+        <h4><i class="fas fa-user"></i> User Login</h4>
+    </div>
+    <div class="card-body">
+        @if (!string.IsNullOrEmpty(errorMessage))
+        {
+            <div class="alert alert-danger" role="alert">
+                <i class="fas fa-exclamation-triangle"></i> @errorMessage
+            </div>
+        }
+
+        <EditForm Model="model" OnValidSubmit="HandleValidSubmit" FormName="loginForm">
+            <DataAnnotationsValidator />
+            
+            <div class="mb-3">
+                <label for="email" class="form-label">Email Address</label>
+                <InputText id="email" class="form-control" @bind-Value="model.Email" placeholder="Enter your email" />
+                <ValidationMessage For="@(() => model.Email)" />
+            </div>
+
+            <div class="mb-3">
+                <label for="password" class="form-label">Password</label>
+                <InputText id="password" type="password" class="form-control" @bind-Value="model.Password" placeholder="Enter your password" />
+                <ValidationMessage For="@(() => model.Password)" />
+            </div>
+
+            <div class="d-grid">
+                <button type="submit" class="btn btn-primary" disabled="@isLoading">
+                    @if (isLoading)
+                    {
+                        <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                    }
+                    <i class="fas fa-sign-in-alt"></i> Login
+                </button>
+            </div>
+        </EditForm>
+
+        <div class="text-center mt-3">
+            <a href="/user/forgot-password" class="text-decoration-none">
+                <i class="fas fa-key"></i> Forgot Password?
+            </a>
+        </div>
+    </div>
+    <div class="card-footer text-center">
+        <small class="text-muted">
+            <i class="fas fa-info-circle"></i> User Access - Contact Admin for Account
+        </small>
+    </div>
+</div>
+
+
+@code {
+	private LoginViewModel model = new();
+	private bool isLoading = false;
+	private string? errorMessage;
+
+	protected override async Task OnInitializedAsync()
+	{
+		// Redirect if already authenticated
+		if (await AuthService.IsAuthenticatedAsync())
+		{
+			Navigation.NavigateTo("/dashboard", true);
+		}
+	}
+
+	private async Task HandleValidSubmit()
+	{
+		isLoading = true;
+		errorMessage = string.Empty;
+
+		try
+		{
+			var response = await AuthService.LoginAsync(new LoginRequest
+			{
+				Email = model.Email,
+				Password = model.Password
+			});
+			// To see the full object details in the terminal, write to the server console:
+			Console.WriteLine("Login response: " + System.Text.Json.JsonSerializer.Serialize(response));
+			Console.WriteLine("Login Model: " + System.Text.Json.JsonSerializer.Serialize(model));
+			if (response.Success)
+			{
+				Navigation.NavigateTo("/dashboard", true);
+			}
+			else
+			{
+				errorMessage = response.Message;
+			}
+		}
+		catch (Exception ex)
+		{
+			errorMessage = $"Login failed: {ex.Message}";
+		}
+		finally
+		{
+			isLoading = false;
+		}
+	}
+
+}

@@ -1,0 +1,299 @@
+@using Microsoft.AspNetCore.Components
+@using Microsoft.JSInterop
+@inject IJSRuntime JSRuntime
+
+<input type="text"
+       @ref="inputElement"
+       id="@Id"
+       class="@Class"
+       placeholder="@Placeholder"
+       value="@displayValue"
+       maxlength="12"
+       @oninput="HandleInput"
+       @onkeydown="HandleKeyDown"
+       @onpaste="HandlePaste"
+       @attributes="AdditionalAttributes" />
+
+@code {
+    [Parameter] public string? Value { get; set; }
+    [Parameter] public EventCallback<string> ValueChanged { get; set; }
+    [Parameter] public string? Id { get; set; }
+    [Parameter] public string? Class { get; set; }
+    [Parameter] public string? Placeholder { get; set; }
+    [Parameter(CaptureUnmatchedValues = true)] public Dictionary<string, object>? AdditionalAttributes { get; set; }
+
+    private string displayValue = "";
+    private ElementReference inputElement;
+    private int lastCursorPosition = 0;
+
+    protected override void OnParametersSet()
+    {
+        displayValue = FormatAccountNumber(Value ?? "");
+        base.OnParametersSet();
+    }
+
+    private int GetDigitCount(string input)
+    {
+        if (string.IsNullOrEmpty(input))
+            return 0;
+        return input.Count(char.IsDigit);
+    }
+
+    private int GetDigitPositionFromCursorPosition(string formatted, int cursorPos)
+    {
+        // Count how many digits appear before the cursor position
+        int digitCount = 0;
+        for (int i = 0; i < Math.Min(cursorPos, formatted.Length); i++)
+        {
+            if (char.IsDigit(formatted[i]))
+            {
+                digitCount++;
+            }
+        }
+        return digitCount;
+    }
+
+    private int GetCursorPositionFromDigitPosition(string formatted, int digitPos)
+    {
+        // Find the cursor position that corresponds to the given digit position
+        int digitCount = 0;
+        for (int i = 0; i < formatted.Length; i++)
+        {
+            if (char.IsDigit(formatted[i]))
+            {
+                if (digitCount == digitPos)
+                {
+                    return i + 1; // Position after this digit
+                }
+                digitCount++;
+            }
+        }
+        return formatted.Length; // End of string if digit position exceeds
+    }
+
+    private string FormatAccountNumber(string input)
+    {
+        if (string.IsNullOrEmpty(input))
+            return "";
+
+        // Remove all non-digit characters
+        // Format is x-xx-xx-xxxx (1+2+2+4 = 9 digits total)
+        var digits = new string(input.Where(char.IsDigit).Take(9).ToArray());
+
+        if (string.IsNullOrEmpty(digits))
+            return "";
+
+        // Format as x-xx-xx-xxxx
+        var formatted = "";
+        if (digits.Length > 0)
+        {
+            formatted = digits[0].ToString();
+            if (digits.Length > 1)
+            {
+                formatted += "-" + digits.Substring(1, Math.Min(2, digits.Length - 1));
+                if (digits.Length > 3)
+                {
+                    formatted += "-" + digits.Substring(3, Math.Min(2, digits.Length - 3));
+                    if (digits.Length > 5)
+                    {
+                        formatted += "-" + digits.Substring(5, Math.Min(4, digits.Length - 5));
+                    }
+                }
+            }
+        }
+
+        return formatted;
+    }
+
+    private async Task HandleInput(ChangeEventArgs e)
+    {
+        var inputValue = e.Value?.ToString() ?? "";
+        
+        // Immediately filter out non-digits - this prevents any non-digit from appearing
+        var formatted = FormatAccountNumber(inputValue);
+        
+        // If the formatted value is different from input, non-digits were entered
+        if (formatted != inputValue)
+        {
+            // Get cursor position before updating
+            var cursorPos = await GetCursorPosition();
+            var digitPos = GetDigitPositionFromCursorPosition(displayValue, cursorPos);
+            
+            // Update with filtered value
+            displayValue = formatted;
+            await ValueChanged.InvokeAsync(formatted);
+            
+            // Restore cursor position
+            await Task.Delay(10);
+            var filteredCursorPos = GetCursorPositionFromDigitPosition(formatted, Math.Min(digitPos, GetDigitCount(formatted)));
+            await SetCursorPosition(filteredCursorPos);
+            StateHasChanged();
+            return;
+        }
+        
+        // Normal flow - get cursor position and selection before formatting
+        var cursorPos2 = await GetCursorPosition();
+        var selectionStart = await GetSelectionStart();
+        var selectionEnd = await GetSelectionEnd();
+        
+        // If user has selected text, we're replacing, so allow it
+        var hasSelection = selectionStart != selectionEnd;
+        
+        // Calculate which digit position the cursor is at
+        var digitPos2 = GetDigitPositionFromCursorPosition(displayValue, cursorPos2);
+        
+        // Calculate new cursor position based on digit position
+        int newCursorPos;
+        if (hasSelection)
+        {
+            // When replacing, position cursor after the replacement
+            var selectedDigitCount = GetDigitPositionFromCursorPosition(displayValue, selectionEnd) - 
+                                   GetDigitPositionFromCursorPosition(displayValue, selectionStart);
+            var newDigitPos = Math.Min(digitPos2 + 1, GetDigitCount(formatted));
+            newCursorPos = GetCursorPositionFromDigitPosition(formatted, newDigitPos);
+        }
+        else
+        {
+            // Normal typing - maintain digit position, but adjust if digit was added
+            var oldDigitCount = GetDigitCount(displayValue);
+            var newDigitCount = GetDigitCount(formatted);
+            
+            if (newDigitCount > oldDigitCount)
+            {
+                // Digit was added - advance cursor
+                newCursorPos = GetCursorPositionFromDigitPosition(formatted, Math.Min(digitPos2 + 1, newDigitCount));
+            }
+            else
+            {
+                // Digit was deleted or replaced - maintain position
+                newCursorPos = GetCursorPositionFromDigitPosition(formatted, Math.Min(digitPos2, newDigitCount));
+            }
+        }
+        
+        // Update display value immediately
+        displayValue = formatted;
+        
+        // Update the bound value through ValueChanged callback
+        await ValueChanged.InvokeAsync(formatted);
+        
+        // Restore cursor position after DOM update
+        await Task.Delay(10);
+        await SetCursorPosition(newCursorPos);
+        
+        StateHasChanged();
+    }
+
+    private async Task HandlePaste(ClipboardEventArgs e)
+    {
+        // Prevent default paste and handle it manually
+        try
+        {
+            var clipboardText = await JSRuntime.InvokeAsync<string>("getClipboardText");
+            if (!string.IsNullOrEmpty(clipboardText))
+            {
+                // Extract only digits from pasted content
+                var digitsOnly = new string(clipboardText.Where(char.IsDigit).Take(9).ToArray());
+                if (!string.IsNullOrEmpty(digitsOnly))
+                {
+                    var cursorPos = await GetCursorPosition();
+                    var digitPos = GetDigitPositionFromCursorPosition(displayValue, cursorPos);
+                    
+                    // Insert digits at cursor position
+                    var currentDigits = new string(displayValue.Where(char.IsDigit).ToArray());
+                    var newDigits = currentDigits.Substring(0, Math.Min(digitPos, currentDigits.Length)) + 
+                                   digitsOnly + 
+                                   currentDigits.Substring(Math.Min(digitPos, currentDigits.Length));
+                    
+                    var formatted = FormatAccountNumber(newDigits);
+                    displayValue = formatted;
+                    await ValueChanged.InvokeAsync(formatted);
+                    
+                    await Task.Delay(10);
+                    var newCursorPos = GetCursorPositionFromDigitPosition(formatted, Math.Min(digitPos + digitsOnly.Length, GetDigitCount(formatted)));
+                    await SetCursorPosition(newCursorPos);
+                    StateHasChanged();
+                }
+            }
+        }
+        catch
+        {
+            // Ignore errors - HandleInput will catch and filter
+        }
+    }
+
+    private async Task<int> GetCursorPosition()
+    {
+        try
+        {
+            return await JSRuntime.InvokeAsync<int>("getSelectionStart", inputElement);
+        }
+        catch
+        {
+            return lastCursorPosition;
+        }
+    }
+
+    private async Task<int> GetSelectionStart()
+    {
+        try
+        {
+            return await JSRuntime.InvokeAsync<int>("getSelectionStart", inputElement);
+        }
+        catch
+        {
+            return 0;
+        }
+    }
+
+    private async Task<int> GetSelectionEnd()
+    {
+        try
+        {
+            return await JSRuntime.InvokeAsync<int>("getSelectionEnd", inputElement);
+        }
+        catch
+        {
+            return 0;
+        }
+    }
+
+    private async Task SetCursorPosition(int position)
+    {
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("setSelectionRange", inputElement, position, position);
+            lastCursorPosition = position;
+        }
+        catch
+        {
+            // Ignore errors
+        }
+    }
+
+    private void HandleKeyDown(KeyboardEventArgs e)
+    {
+        // Allow backspace, delete, tab, escape, enter, arrow keys, and navigation keys
+        if (e.Key == "Backspace" || e.Key == "Delete" || 
+            e.Key == "Tab" || e.Key == "Escape" || 
+            e.Key == "Enter" || e.Key.StartsWith("Arrow") ||
+            e.Key == "Home" || e.Key == "End" ||
+            e.Key == "PageUp" || e.Key == "PageDown")
+        {
+            return;
+        }
+
+        // Allow Ctrl+A, Ctrl+C, Ctrl+V, Ctrl+X
+        if (e.CtrlKey && (e.Key == "a" || e.Key == "c" || e.Key == "v" || e.Key == "x"))
+        {
+            return;
+        }
+
+        // Allow digits only
+        if (e.Key.Length == 1 && char.IsDigit(e.Key[0]))
+        {
+            return;
+        }
+
+        // All other keys will be filtered out in HandleInput
+    }
+}

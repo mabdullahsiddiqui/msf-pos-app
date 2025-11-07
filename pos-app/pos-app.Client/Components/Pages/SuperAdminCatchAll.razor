@@ -1,0 +1,63 @@
+@page "/superadmin"
+@rendermode InteractiveWebAssembly
+@layout pos_app.Client.Components.Layout.SuperAdminMainLayout
+@using pos_app.Client.Services
+@inject AuthenticationStateService AuthState
+@inject NavigationManager Navigation
+
+<PageTitle>Super Admin</PageTitle>
+
+@if (isLoading)
+{
+    <div class="d-flex justify-content-center align-items-center" style="height: 100vh;">
+        <div class="spinner-border text-primary" role="status">
+            <span class="visually-hidden">Loading...</span>
+        </div>
+    </div>
+}
+else
+{
+    <div class="container-fluid">
+        <div class="row">
+            <div class="col-12">
+                <div class="d-flex justify-content-center align-items-center" style="height: 50vh;">
+                    <div class="text-center">
+                        <h2>Super Admin Dashboard</h2>
+                        <p class="text-muted">Welcome to the Super Admin panel</p>
+                        <a href="/superadmin/dashboard" class="btn btn-primary">
+                            <i class="fas fa-tachometer-alt"></i> Go to Dashboard
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private bool isLoading = true;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            // Check if user is already on a Super Admin page
+            var currentUri = Navigation.Uri;
+            var isOnSuperAdminPage = currentUri.Contains("/superadmin/");
+            
+            // Only redirect if not already on a Super Admin page
+            if (!isOnSuperAdminPage)
+            {
+                if (await AuthState.IsSuperAdminAuthenticatedAsync())
+                {
+                    Navigation.NavigateTo("/superadmin/dashboard", forceLoad: true);
+                }
+                else
+                {
+                    Navigation.NavigateTo("/superadmin/login", forceLoad: true);
+                }
+            }
+            isLoading = false;
+        }
+    }
+}

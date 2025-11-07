@@ -1,0 +1,197 @@
+@page "/reports/cash-book"
+@using pos_app.Client.Services
+@using pos_app.Client.Models
+@using pos_app.Client.Components.Shared
+@inject DataService DataService
+@inject SessionService SessionService
+
+<PageTitle>Cash Book Report - POS System</PageTitle>
+
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+
+            <!-- Date Filter -->
+            <FilterCard Title="Report Filters" IconClass="fas fa-calendar-alt">
+                <div class="row">
+                    <DateInput Label="From Date:" Id="fromDate" @bind-Value="fromDate" MinDate="@minDate" />
+                    <DateInput Label="To Date:" Id="toDate" @bind-Value="toDate" />
+                    <div class="col-md-2 d-flex align-items-end">
+                        <ActionButton Text="Generate Report" IconClass="fas fa-search" OnClick="LoadCashBook" IsLoading="@isLoading" IsDisabled="@isLoading" />
+                    </div>
+                    <div class="col-md-4 d-flex align-items-end">
+                        @if (cashBookData != null && cashBookData.Success)
+                        {
+                            <div class="text-muted">
+                                <small>Report generated on: @DateTime.Now.ToString("yyyy-MM-dd HH:mm")</small>
+                            </div>
+                        }
+                    </div>
+                </div>
+            </FilterCard>
+
+            <!-- Loading Indicator -->
+            @if (isLoading)
+            {
+                <LoadingSpinner Message="Generating cash book report..." />
+            }
+
+            <!-- Error Message -->
+            <ErrorAlert Message="@errorMessage" />
+
+            <!-- Report Data -->
+            @if (cashBookData != null && cashBookData.Success)
+            {
+                <ReportTable FilterableColumns="@(new List<int> { 0, 1, 2 })">
+                    <HeaderContent>
+                        <ReportTitleHeader Title="Cash Book Report" IconClass="fas fa-book-open">
+                            <DateRangeContent>
+                                From: @cashBookData.FromDate.ToString("dd/MM/yyyy") 
+                                To: @cashBookData.ToDate.ToString("dd/MM/yyyy")
+                            </DateRangeContent>
+                        </ReportTitleHeader>
+                    </HeaderContent>
+                    
+                    <SummaryCards>
+                        <SummaryCard Title="Total Receipts" Value="@CurrencyHelper.FormatNumber(cashBookData.TotalReceipts)" BgColor="success" />
+                        <SummaryCard Title="Total Payments" Value="@CurrencyHelper.FormatNumber(cashBookData.TotalPayments)" BgColor="danger" />
+                        <SummaryCard Title="Cash Balance" Value="@CurrencyHelper.FormatNumber(cashBookData.CashBalance)" BgColor="primary" />
+                        <SummaryCard Title="Processing Time" Value="@($"{cashBookData.ProcessingTimeMs} ms")" BgColor="info" />
+                    </SummaryCards>
+
+
+                    <BodyContent>
+                        <table class="table table-bordered table-striped">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Particulars</th>
+                                    <th>Voucher No</th>
+                                    <th>Receipts</th>
+                                    <th>Payments</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var item in cashBookData.Data)
+                                {
+                                    <tr>
+                                        <td>
+                                            @if (item.TransDate.HasValue)
+                                            {
+                                                @item.TransDate.Value.ToString("dd/MM/yyyy")
+                                            }
+                                        </td>
+                                        <td>
+                                            <div style="white-space: pre-line;">
+                                                @if (!string.IsNullOrEmpty(item.AccName))
+                                                {
+                                                    <div class="fw-bold">@item.AccName</div>
+                                                }
+                                                @if (!string.IsNullOrEmpty(item.Description))
+                                                {
+                                                    <div>@item.Description</div>
+                                                }
+                                            </div>
+                                        </td>
+                                        <td>
+                                            @if (!string.IsNullOrEmpty(item.VoucherNo))
+                                            {
+                                                <span class="badge bg-primary">@item.VoucherNo</span>
+                                            }
+                                        </td>
+                                        <td class="text-end">
+                                            @if (item.Receipts > 0)
+                                            {
+                                                <span class="text-success fw-bold">@CurrencyHelper.FormatNumber(item.Receipts)</span>
+                                            }
+                                        </td>
+                                        <td class="text-end">
+                                            @if (item.Payments > 0)
+                                            {
+                                                <span class="text-danger fw-bold">@CurrencyHelper.FormatNumber(item.Payments)</span>
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </BodyContent>
+
+                    <FooterContent>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <strong>Total Receipts: @CurrencyHelper.FormatNumber(cashBookData.TotalReceipts)</strong>
+                            </div>
+                            <div class="col-md-6">
+                                <strong>Total Payments: @CurrencyHelper.FormatNumber(cashBookData.TotalPayments)</strong>
+                            </div>
+                        </div>
+                        <div class="row mt-2">
+                            <div class="col-12">
+                                <strong>Cash Balance: <span class="@(cashBookData.CashBalance >= 0 ? "text-success" : "text-danger")">@CurrencyHelper.FormatNumber(cashBookData.CashBalance)</span></strong>
+                            </div>
+                        </div>
+                    </FooterContent>
+                </ReportTable>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    private DateTime fromDate;
+    private DateTime toDate = DateTime.Now;
+    private CashBookResponse? cashBookData;
+    private bool isLoading = false;
+    private string errorMessage = string.Empty;
+    private DateTime? minDate;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Get minimum date from session
+        minDate = await SessionService.GetMinDateAsync();
+        
+        // Set fromDate to session start_date if available, otherwise use current month start
+        if (minDate.HasValue)
+        {
+            fromDate = minDate.Value;
+        }
+        else
+        {
+            fromDate = new DateTime(DateTime.Now.Year, DateTime.Now.Month, 1);
+        }
+        
+        toDate = DateTime.Now;
+    }
+
+    private async Task LoadCashBook()
+    {
+        if (fromDate > toDate)
+        {
+            errorMessage = "From date cannot be greater than To date.";
+            return;
+        }
+
+        isLoading = true;
+        errorMessage = string.Empty;
+        cashBookData = null;
+
+        try
+        {
+            cashBookData = await DataService.GetCashBookAsync(fromDate, toDate);
+            
+            if (!cashBookData.Success)
+            {
+                errorMessage = cashBookData.Message;
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"An error occurred while loading the cash book: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+}

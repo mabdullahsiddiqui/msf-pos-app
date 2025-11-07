@@ -1,0 +1,2553 @@
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
+using pos_app.Models;
+using pos_app.Services;
+using pos_app.Data;
+using System.Security.Claims;
+using System.Diagnostics;
+
+namespace pos_app.Controllers
+{
+    [ApiController]
+    [Route("api/[controller]")]
+    [Authorize]
+    public class ReportsController : ControllerBase
+    {
+        private readonly DataAccessService _dataAccessService;
+        private readonly ClientDataService _clientDataService;
+        private readonly AuthService _authService;
+        private readonly MasterDbContext _masterDbContext;
+        private readonly ILogger<ReportsController> _logger;
+
+        public ReportsController(
+            DataAccessService dataAccessService,
+            ClientDataService clientDataService,
+            AuthService authService,
+            MasterDbContext masterDbContext,
+            ILogger<ReportsController> logger)
+        {
+            _dataAccessService = dataAccessService;
+            _clientDataService = clientDataService;
+            _authService = authService;
+            _masterDbContext = masterDbContext;
+            _logger = logger;
+        }
+
+        /* 
+         * ARCHITECTURE NOTE - Reports Implementation Strategy
+         * 
+         * This controller uses a hybrid approach for reports:
+         * 
+         * 1. COMPLEX REPORTS (Trial Balance, Monthly Account Balance, etc.):
+         *    - Use raw SQL directly via DataAccessService.ExecuteQueryAsync()
+         *    - These reports have complex hierarchical aggregations, temp tables, and SQL-specific logic
+         *    - Maintaining them in SQL provides better performance and clarity
+         *    - Examples: GetTrialBalanceCSharp, GetMonthlyAccountBalance, GetThreeTrialBalance
+         * 
+         * 2. SIMPLE REPORTS:
+         *    - Can use ClientDataService which wraps FromSqlRaw() for cleaner architecture
+         *    - Provides better code organization and reusability
+         *    - Example: Sales Summary, simple data aggregations
+         * 
+         * 3. FUTURE REPORTS:
+         *    - For new simple reports, prefer using ClientDataService methods
+         *    - For complex reports with SQL-specific features, continue using DataAccessService
+         * 
+         * This follows the hybrid EF Core approach:
+         * - EF Core for CRUD operations (type-safe, IntelliSense)
+         * - Raw SQL for complex reporting (performance, SQL features)
+         */
+        
+        /* 
+         * COMMENTED OUT - Simple Trial Balance (kept for reference)
+         * This is the old simple implementation without hierarchical aggregation.
+         * Now using GetTrialBalanceCSharp as the primary endpoint.
+         * Uncomment if needed for backward compatibility.
+         */
+        /*
+        // Traditional Trial Balance Report
+        [HttpGet("trial-balance")]
+        public async Task<ActionResult<TrialBalanceResponse>> GetTrialBalance([FromQuery] DateTime? asOfDate = null)
+        {
+            try
+            {
+                var userId = GetCurrentUserId();
+                var user = await _authService.GetActiveUserAsync(userId);
+                
+                if (user == null)
+                {
+                    return BadRequest(new TrialBalanceResponse
+                    {
+                        Success = false,
+                        Message = "No active database connection found. Please set up your database connection first."
+                    });
+                }
+
+                // Use provided date or default to current date
+                var reportDate = asOfDate ?? DateTime.Now;
+                var dateString = reportDate.ToString("yyyy/MM/dd");
+
+                // Traditional Trial Balance SQL query
+                var query = $@"
+                    SELECT 
+                        a.acc_code as AccCode,
+                        a.acc_name as AccName,
+                        a.acc_type as AccType,
+                        ISNULL(b.debit, 0) as Debit,
+                        ISNULL(b.credit, 0) as Credit
+                    FROM customer a 
+                    LEFT JOIN (
+                        SELECT 
+                            acc_code,
+                            CASE WHEN SUM(dr_amount) - SUM(cr_amount) > 0 
+                                 THEN SUM(dr_amount) - SUM(cr_amount) 
+                                 ELSE 0 END as debit,
+                            CASE WHEN SUM(dr_amount) - SUM(cr_amount) < 0 
+                                 THEN ABS(SUM(dr_amount) - SUM(cr_amount)) 
+                                 ELSE 0 END as credit
+                        FROM view_gjournal 
+                        WHERE vouch_date <= '{dateString}' 
+                        GROUP BY acc_code
+                    ) as b ON a.acc_code = b.acc_code
+                    ORDER BY a.acc_code";
+
+                var results = await _dataAccessService.ExecuteQueryAsync(user, query);
+                
+                var trialBalanceItems = new List<TrialBalanceItem>();
+                decimal totalDebit = 0;
+                decimal totalCredit = 0;
+
+                foreach (var row in results)
+                {
+                    var item = new TrialBalanceItem
+                    {
+                        AccCode = row.ContainsKey("AccCode") ? row["AccCode"]?.ToString() ?? "" : "",
+                        AccName = row.ContainsKey("AccName") ? row["AccName"]?.ToString() ?? "" : "",
+                        AccType = row.ContainsKey("AccType") ? row["AccType"]?.ToString() ?? "" : "",
+                        Debit = row.ContainsKey("Debit") && decimal.TryParse(row["Debit"]?.ToString(), out var debit) ? debit : 0,
+                        Credit = row.ContainsKey("Credit") && decimal.TryParse(row["Credit"]?.ToString(), out var credit) ? credit : 0
+                    };
+
+                    trialBalanceItems.Add(item);
+                    totalDebit += item.Debit;
+                    totalCredit += item.Credit;
+                }
+
+                return Ok(new TrialBalanceResponse
+                {
+                    Success = true,
+                    Message = "Trial Balance retrieved successfully",
+                    Data = trialBalanceItems,
+                    AsOfDate = reportDate,
+                    TotalDebit = totalDebit,
+                    TotalCredit = totalCredit
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting trial balance");
+                return StatusCode(500, new TrialBalanceResponse
+                {
+                    Success = false,
+                    Message = "Internal server error"
+                });
+            }
+        }
+        */
+
+        // Hierarchical Trial Balance Report - C# Logic Implementation
+        [HttpGet("trial-balance-csharp")]
+        public async Task<ActionResult<TrialBalanceResponse>> GetTrialBalanceCSharp([FromQuery] DateTime? asOfDate = null)
+        {
+            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+            try
+            {
+                var userId = GetCurrentUserId();
+                var user = await _authService.GetActiveUserAsync(userId);
+                
+                if (user == null)
+                {
+                    return BadRequest(new TrialBalanceResponse
+                    {
+                        Success = false,
+                        Message = "No active database connection found. Please set up your database connection first."
+                    });
+                }
+
+                // Use provided date or default to current date
+                var reportDate = asOfDate ?? DateTime.Now;
+                var dateString = reportDate.ToString("yyyy/MM/dd");
+
+                // Step 1: We'll get all accounts in the next query
+
+                // Step 2: Get all account balances (both Group and Detail) with numeric account codes
+                var allAccountsWithBalancesQuery = $@"
+                    SELECT 
+                        a.acc_code as AccCode,
+                        a.acc_name as AccName,
+                        a.acc_type as AccType,
+                        CAST(REPLACE(a.acc_code, '-', '') AS BIGINT) as AccCodeNumeric,
+                        CASE WHEN SUM(ISNULL(dr_amount, 0)) - SUM(ISNULL(cr_amount, 0)) > 0 
+                             THEN SUM(ISNULL(dr_amount, 0)) - SUM(ISNULL(cr_amount, 0)) 
+                             ELSE 0 END as Debit,
+                        CASE WHEN SUM(ISNULL(dr_amount, 0)) - SUM(ISNULL(cr_amount, 0)) < 0 
+                             THEN ABS(SUM(ISNULL(dr_amount, 0)) - SUM(ISNULL(cr_amount, 0))) 
+                             ELSE 0 END as Credit
+                    FROM customer a 
+                    LEFT JOIN view_gjournal b ON a.acc_code = b.acc_code 
+                        AND b.vouch_date <= '{dateString}'
+                    GROUP BY a.acc_code, a.acc_name, a.acc_type
+                    ORDER BY a.acc_code";
+
+                var allAccountsWithBalances = await _dataAccessService.ExecuteQueryAsync(user, allAccountsWithBalancesQuery);
+
+                // Step 3: Calculate hierarchical sums using LINQ-based cascading approach
+                var accountData = new List<(string AccCode, string AccName, string AccType, long AccCodeNumeric, decimal Debit, decimal Credit)>();
+
+                // Initialize accountData directly using LINQ
+                accountData = allAccountsWithBalances
+                    .Select(row => (
+                        AccCode: row["AccCode"]?.ToString() ?? "",
+                        AccName: row["AccName"]?.ToString() ?? "",
+                        AccType: row["AccType"]?.ToString() ?? "",
+                        AccCodeNumeric: long.TryParse(row["AccCodeNumeric"]?.ToString(), out var n) ? n : 0,
+                        Debit: decimal.TryParse(row["Debit"]?.ToString(), out var d) ? d : 0,
+                        Credit: decimal.TryParse(row["Credit"]?.ToString(), out var c) ? c : 0
+                    ))
+                    .Where(a => !string.IsNullOrEmpty(a.AccCode))
+                    .ToList();
+
+                // Loop 1 - Process 3rd Tyre: Sum 4th tyre (Detail) accounts into 3rd tyre groups
+                var thirdTyreAccounts = accountData.Where(a => 
+                    a.AccCodeNumeric % 10000 == 0 && // Account code is a multiple of 10,000
+                    a.AccCodeNumeric % 1000000 != 0 && // But NOT a multiple of 1,000,000 (so not a 2nd tyre group)
+                    a.AccCodeNumeric % 100000000 != 0 // And NOT a multiple of 100,000,000 (so not a 1st tyre group)
+                ).ToList();
+
+                for (int i = 0; i < thirdTyreAccounts.Count; i++)
+                {
+                    var account = thirdTyreAccounts[i];
+                    var matchingAccounts = accountData.Where(d => 
+                        d.AccCodeNumeric >= account.AccCodeNumeric && 
+                        d.AccCodeNumeric < account.AccCodeNumeric + 10000 &&
+                        d.AccCodeNumeric % 10000 != 0).ToList(); // 4th tyre (Detail)
+
+                    var sumDebit = matchingAccounts.Sum(d => d.Debit);
+                    var sumCredit = matchingAccounts.Sum(d => d.Credit);
+
+                    // Update the account in the main list
+                    var accountIndex = accountData.FindIndex(a => a.AccCode == account.AccCode);
+                    if (accountIndex >= 0)
+                    {
+                        accountData[accountIndex] = (account.AccCode, account.AccName, account.AccType, account.AccCodeNumeric, sumDebit, sumCredit);
+                    }
+                }
+
+                // Loop 2 - Process 2nd Tyre: Sum 3rd tyre groups into 2nd tyre groups
+                var secondTyreAccounts = accountData.Where(a => 
+                    a.AccCodeNumeric % 1000000 == 0 && 
+                    a.AccCodeNumeric % 100000000 != 0).ToList();
+
+                for (int i = 0; i < secondTyreAccounts.Count; i++)
+                {
+                    var account = secondTyreAccounts[i];
+                    var matchingAccounts = accountData.Where(t => 
+                        t.AccCodeNumeric >= account.AccCodeNumeric && 
+                        t.AccCodeNumeric < account.AccCodeNumeric + 1000000 &&
+                        t.AccCodeNumeric % 10000 == 0 && 
+                        t.AccCodeNumeric % 1000000 != 0).ToList(); // 3rd tyre
+
+                    var sumDebit = matchingAccounts.Sum(t => t.Debit);
+                    var sumCredit = matchingAccounts.Sum(t => t.Credit);
+
+                    // Update the account in the main list
+                    var accountIndex = accountData.FindIndex(a => a.AccCode == account.AccCode);
+                    if (accountIndex >= 0)
+                    {
+                        accountData[accountIndex] = (account.AccCode, account.AccName, account.AccType, account.AccCodeNumeric, sumDebit, sumCredit);
+                    }
+                }
+
+                // Loop 3 - Process 1st Tyre: Sum 2nd tyre groups into 1st tyre groups
+                var firstTyreAccounts = accountData.Where(a => a.AccCodeNumeric % 100000000 == 0).ToList();
+
+                for (int i = 0; i < firstTyreAccounts.Count; i++)
+                {
+                    var account = firstTyreAccounts[i];
+                    var matchingAccounts = accountData.Where(s => 
+                        s.AccCodeNumeric >= account.AccCodeNumeric && 
+                        s.AccCodeNumeric < account.AccCodeNumeric + 100000000 &&
+                        s.AccCodeNumeric % 1000000 == 0 && 
+                        s.AccCodeNumeric % 100000000 != 0).ToList(); // 2nd tyre
+
+                    var sumDebit = matchingAccounts.Sum(s => s.Debit);
+                    var sumCredit = matchingAccounts.Sum(s => s.Credit);
+
+                    // Update the account in the main list
+                    var accountIndex = accountData.FindIndex(a => a.AccCode == account.AccCode);
+                    if (accountIndex >= 0)
+                    {
+                        accountData[accountIndex] = (account.AccCode, account.AccName, account.AccType, account.AccCodeNumeric, sumDebit, sumCredit);
+                    }
+                }
+
+                // Step 4: Create final trial balance items using LINQ
+                var trialBalanceItems = accountData
+                    .Where(a => a.Debit > 0 || a.Credit > 0)
+                    .OrderBy(a => a.AccCodeNumeric)
+                    .Select(a => new TrialBalanceItem
+                    {
+                        AccCode = a.AccCode,
+                        AccName = a.AccName,
+                        AccType = a.AccType,
+                        Debit = a.Debit,
+                        Credit = a.Credit
+                    }).ToList();
+
+                var totalDebit = accountData.Sum(a => a.Debit);
+                var totalCredit = accountData.Sum(a => a.Credit);
+
+
+                stopwatch.Stop();
+                return Ok(new TrialBalanceResponse
+                {
+                    Success = true,
+                    Message = "Hierarchical Trial Balance (C# Logic) retrieved successfully",
+                    Data = trialBalanceItems.OrderBy(x => x.AccCode).ToList(),
+                    AsOfDate = reportDate,
+                    TotalDebit = totalDebit,
+                    TotalCredit = totalCredit,
+                    ProcessingTimeMs = stopwatch.ElapsedMilliseconds
+                });
+            }
+            catch (Exception ex)
+            {
+                stopwatch.Stop();
+                _logger.LogError(ex, "Error getting hierarchical trial balance (C# Logic)");
+                return StatusCode(500, new TrialBalanceResponse
+                {
+                    Success = false,
+                    Message = "Internal server error",
+                    ProcessingTimeMs = stopwatch.ElapsedMilliseconds
+                });
+            }
+        }
+
+        // Hierarchical Trial Balance Report - SQL Implementation (with LINQ aggregation)
+        // NOTE: This endpoint uses the same LINQ-based logic as C# Logic for comparison purposes
+        // It's kept available for developers but not exposed in the UI by default
+        [HttpGet("trial-balance-sql")]
+        public async Task<ActionResult<TrialBalanceResponse>> GetTrialBalanceSql([FromQuery] DateTime? asOfDate = null)
+        {
+            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+            try
+            {
+                var userId = GetCurrentUserId();
+                var user = await _authService.GetActiveUserAsync(userId);
+                
+                if (user == null)
+                {
+                    return BadRequest(new TrialBalanceResponse
+                    {
+                        Success = false,
+                        Message = "No active database connection found. Please set up your database connection first."
+                    });
+                }
+
+                // Use provided date or default to current date
+                var reportDate = asOfDate ?? DateTime.Now;
+                var dateString = reportDate.ToString("yyyy/MM/dd");
+
+                // Step 2: Get all account balances (both Group and Detail) with numeric account codes
+                var allAccountsWithBalancesQuery = $@"
+                    SELECT 
+                        a.acc_code as AccCode,
+                        a.acc_name as AccName,
+                        a.acc_type as AccType,
+                        CAST(REPLACE(a.acc_code, '-', '') AS BIGINT) as AccCodeNumeric,
+                        CASE WHEN SUM(ISNULL(dr_amount, 0)) - SUM(ISNULL(cr_amount, 0)) > 0 
+                             THEN SUM(ISNULL(dr_amount, 0)) - SUM(ISNULL(cr_amount, 0)) 
+                             ELSE 0 END as Debit,
+                        CASE WHEN SUM(ISNULL(dr_amount, 0)) - SUM(ISNULL(cr_amount, 0)) < 0 
+                             THEN ABS(SUM(ISNULL(dr_amount, 0)) - SUM(ISNULL(cr_amount, 0))) 
+                             ELSE 0 END as Credit
+                    FROM customer a 
+                    LEFT JOIN view_gjournal b ON a.acc_code = b.acc_code 
+                        AND b.vouch_date <= '{dateString}'
+                    GROUP BY a.acc_code, a.acc_name, a.acc_type
+                    ORDER BY a.acc_code";
+
+                var allAccountsWithBalances = await _dataAccessService.ExecuteQueryAsync(user, allAccountsWithBalancesQuery);
+
+                // Step 3: Calculate hierarchical sums using LINQ-based cascading approach
+                var accountData = new List<(string AccCode, string AccName, string AccType, long AccCodeNumeric, decimal Debit, decimal Credit)>();
+
+                // Initialize accountData directly using LINQ
+                accountData = allAccountsWithBalances
+                    .Select(row => (
+                        AccCode: row["AccCode"]?.ToString() ?? "",
+                        AccName: row["AccName"]?.ToString() ?? "",
+                        AccType: row["AccType"]?.ToString() ?? "",
+                        AccCodeNumeric: long.TryParse(row["AccCodeNumeric"]?.ToString(), out var n) ? n : 0,
+                        Debit: decimal.TryParse(row["Debit"]?.ToString(), out var d) ? d : 0,
+                        Credit: decimal.TryParse(row["Credit"]?.ToString(), out var c) ? c : 0
+                    ))
+                    .Where(a => !string.IsNullOrEmpty(a.AccCode))
+                    .ToList();
+
+                // Loop 1 - Process 3rd Tyre: Sum 4th tyre (Detail) accounts into 3rd tyre groups
+                var thirdTyreAccounts = accountData.Where(a => 
+                    a.AccCodeNumeric % 10000 == 0 && // Account code is a multiple of 10,000
+                    a.AccCodeNumeric % 1000000 != 0 && // But NOT a multiple of 1,000,000 (so not a 2nd tyre group)
+                    a.AccCodeNumeric % 100000000 != 0 // And NOT a multiple of 100,000,000 (so not a 1st tyre group)
+                ).ToList();
+
+                for (int i = 0; i < thirdTyreAccounts.Count; i++)
+                {
+                    var account = thirdTyreAccounts[i];
+                    var matchingAccounts = accountData.Where(d => 
+                        d.AccCodeNumeric >= account.AccCodeNumeric && 
+                        d.AccCodeNumeric < account.AccCodeNumeric + 10000 &&
+                        d.AccCodeNumeric % 10000 != 0).ToList(); // 4th tyre (Detail)
+
+                    var sumDebit = matchingAccounts.Sum(d => d.Debit);
+                    var sumCredit = matchingAccounts.Sum(d => d.Credit);
+
+                    // Update the account in the main list
+                    var accountIndex = accountData.FindIndex(a => a.AccCode == account.AccCode);
+                    if (accountIndex >= 0)
+                    {
+                        accountData[accountIndex] = (account.AccCode, account.AccName, account.AccType, account.AccCodeNumeric, sumDebit, sumCredit);
+                    }
+                }
+
+                // Loop 2 - Process 2nd Tyre: Sum 3rd tyre groups into 2nd tyre groups
+                var secondTyreAccounts = accountData.Where(a => 
+                    a.AccCodeNumeric % 1000000 == 0 && 
+                    a.AccCodeNumeric % 100000000 != 0).ToList();
+
+                for (int i = 0; i < secondTyreAccounts.Count; i++)
+                {
+                    var account = secondTyreAccounts[i];
+                    var matchingAccounts = accountData.Where(t => 
+                        t.AccCodeNumeric >= account.AccCodeNumeric && 
+                        t.AccCodeNumeric < account.AccCodeNumeric + 1000000 &&
+                        t.AccCodeNumeric % 10000 == 0 && 
+                        t.AccCodeNumeric % 1000000 != 0).ToList(); // 3rd tyre
+
+                    var sumDebit = matchingAccounts.Sum(t => t.Debit);
+                    var sumCredit = matchingAccounts.Sum(t => t.Credit);
+
+                    // Update the account in the main list
+                    var accountIndex = accountData.FindIndex(a => a.AccCode == account.AccCode);
+                    if (accountIndex >= 0)
+                    {
+                        accountData[accountIndex] = (account.AccCode, account.AccName, account.AccType, account.AccCodeNumeric, sumDebit, sumCredit);
+                    }
+                }
+
+                // Loop 3 - Process 1st Tyre: Sum 2nd tyre groups into 1st tyre groups
+                var firstTyreAccounts = accountData.Where(a => a.AccCodeNumeric % 100000000 == 0).ToList();
+
+                for (int i = 0; i < firstTyreAccounts.Count; i++)
+                {
+                    var account = firstTyreAccounts[i];
+                    var matchingAccounts = accountData.Where(s => 
+                        s.AccCodeNumeric >= account.AccCodeNumeric && 
+                        s.AccCodeNumeric < account.AccCodeNumeric + 100000000 &&
+                        s.AccCodeNumeric % 1000000 == 0 && 
+                        s.AccCodeNumeric % 100000000 != 0).ToList(); // 2nd tyre
+
+                    var sumDebit = matchingAccounts.Sum(s => s.Debit);
+                    var sumCredit = matchingAccounts.Sum(s => s.Credit);
+
+                    // Update the account in the main list
+                    var accountIndex = accountData.FindIndex(a => a.AccCode == account.AccCode);
+                    if (accountIndex >= 0)
+                    {
+                        accountData[accountIndex] = (account.AccCode, account.AccName, account.AccType, account.AccCodeNumeric, sumDebit, sumCredit);
+                    }
+                }
+
+                // Step 4: Create final trial balance items using LINQ
+                var trialBalanceItems = accountData
+                    .OrderBy(a => a.AccCodeNumeric)
+                    .Select(a => new TrialBalanceItem
+                    {
+                        AccCode = a.AccCode,
+                        AccName = a.AccName,
+                        AccType = a.AccType,
+                        Debit = a.Debit,
+                        Credit = a.Credit
+                    }).ToList();
+
+                var totalDebit = accountData.Sum(a => a.Debit);
+                var totalCredit = accountData.Sum(a => a.Credit);
+
+                stopwatch.Stop();
+                return Ok(new TrialBalanceResponse
+                {
+                    Success = true,
+                    Message = "Hierarchical Trial Balance (SQL Logic) retrieved successfully",
+                    Data = trialBalanceItems,
+                    AsOfDate = reportDate,
+                    TotalDebit = totalDebit,
+                    TotalCredit = totalCredit,
+                    ProcessingTimeMs = stopwatch.ElapsedMilliseconds
+                });
+            }
+            catch (Exception ex)
+            {
+                stopwatch.Stop();
+                _logger.LogError(ex, "Error getting hierarchical trial balance (SQL Logic)");
+                return StatusCode(500, new TrialBalanceResponse
+                {
+                    Success = false,
+                    Message = "Internal server error",
+                    ProcessingTimeMs = stopwatch.ElapsedMilliseconds
+                });
+            }
+        }
+
+
+        // Monthly Account Balance Report
+        [HttpGet("monthly-account-balance")]
+        public async Task<ActionResult<MonthlyAccountBalanceResponse>> GetMonthlyAccountBalance(
+            [FromQuery] DateTime? fromDate = null, 
+            [FromQuery] DateTime? toDate = null,
+            [FromQuery] string? fromAccount = null,
+            [FromQuery] string? uptoAccount = null)
+        {
+            try
+            {
+                var userId = GetCurrentUserId();
+                var user = await _authService.GetActiveUserAsync(userId);
+                
+                if (user == null)
+                {
+                    return BadRequest(new MonthlyAccountBalanceResponse
+                    {
+                        Success = false,
+                        Message = "No active database connection found. Please set up your database connection first."
+                    });
+                }
+
+                // Default account range if not provided
+                var fromAcc = fromAccount ?? "1-01-00-0000";
+                var uptoAcc = uptoAccount ?? "9-99-99-9999";
+
+                // Convert account codes to numeric for range filtering
+                var fromAccountNumeric = long.Parse(fromAcc.Replace("-", ""));
+                var uptoAccountNumeric = long.Parse(uptoAcc.Replace("-", ""));
+
+                // Calculate dates from voucher data if not provided
+                DateTime from;
+                DateTime to;
+                
+                if (fromDate.HasValue && toDate.HasValue)
+                {
+                    // Use provided dates
+                    from = fromDate.Value;
+                    to = toDate.Value;
+                }
+                else
+                {
+                    // Query for min/max voucher dates for the account range (only type 'D')
+                    var dateQuery = $@"
+                        SELECT 
+                            MIN(v.vouch_date) as MinDate,
+                            MAX(v.vouch_date) as MaxDate
+                        FROM view_gjournal v
+                        INNER JOIN customer a ON v.acc_code = a.acc_code
+                        WHERE CAST(REPLACE(v.acc_code, '-', '') AS BIGINT) >= {fromAccountNumeric}
+                          AND CAST(REPLACE(v.acc_code, '-', '') AS BIGINT) <= {uptoAccountNumeric}
+                          AND a.acc_type = 'D'";
+
+                    var dateResults = await _dataAccessService.ExecuteQueryAsync(user, dateQuery);
+                    
+                    if (dateResults != null && dateResults.Any())
+                    {
+                        var firstRow = dateResults.First();
+                        var minDateStr = firstRow.ContainsKey("MinDate") ? firstRow["MinDate"]?.ToString() : null;
+                        var maxDateStr = firstRow.ContainsKey("MaxDate") ? firstRow["MaxDate"]?.ToString() : null;
+                        
+                        if (!string.IsNullOrEmpty(minDateStr) && DateTime.TryParse(minDateStr, out var minDate) &&
+                            !string.IsNullOrEmpty(maxDateStr) && DateTime.TryParse(maxDateStr, out var maxDate))
+                        {
+                            from = minDate;
+                            to = maxDate;
+                        }
+                        else
+                        {
+                            // No vouchers found, default to current month
+                            from = new DateTime(DateTime.Now.Year, DateTime.Now.Month, 1);
+                            to = DateTime.Now;
+                        }
+                    }
+                    else
+                    {
+                        // No vouchers found, default to current month
+                        from = new DateTime(DateTime.Now.Year, DateTime.Now.Month, 1);
+                        to = DateTime.Now;
+                    }
+                }
+                
+                var fromDateString = from.ToString("yyyy/MM/dd");
+                var toDateString = to.ToString("yyyy/MM/dd");
+
+                // Generate month columns dynamically
+                var monthColumns = new List<string>();
+                var currentMonth = new DateTime(from.Year, from.Month, 1);
+                var endMonth = new DateTime(to.Year, to.Month, 1);
+                
+                while (currentMonth <= endMonth)
+                {
+                    monthColumns.Add(currentMonth.ToString("MMM yyyy"));
+                    currentMonth = currentMonth.AddMonths(1);
+                }
+
+                // Monthly Account Balance SQL query (only type 'D')
+                var query = $@"
+                    SELECT 
+                        a.acc_code as AccCode,
+                        a.acc_name as AccName,
+                        FORMAT(v.vouch_date, 'MMM yyyy') as MonthYear,
+                        SUM(ISNULL(v.dr_amount, 0)) - SUM(ISNULL(v.cr_amount, 0)) as Balance
+                    FROM customer a 
+                    LEFT JOIN view_gjournal v ON a.acc_code = v.acc_code 
+                        AND v.vouch_date >= '{fromDateString}' 
+                        AND v.vouch_date <= '{toDateString}'
+                    WHERE CAST(REPLACE(a.acc_code, '-', '') AS BIGINT) >= {fromAccountNumeric}
+                      AND CAST(REPLACE(a.acc_code, '-', '') AS BIGINT) <= {uptoAccountNumeric}
+                      AND a.acc_type = 'D'
+                    GROUP BY a.acc_code, a.acc_name, FORMAT(v.vouch_date, 'MMM yyyy')
+                    ORDER BY a.acc_code";
+
+                var results = await _dataAccessService.ExecuteQueryAsync(user, query);
+                
+                // Process results into structured data
+                var accountBalances = new Dictionary<string, MonthlyAccountBalanceItem>();
+                
+                foreach (var row in results)
+                {
+                    var accCode = row.ContainsKey("AccCode") ? row["AccCode"]?.ToString() ?? "" : "";
+                    var accName = row.ContainsKey("AccName") ? row["AccName"]?.ToString() ?? "" : "";
+                    var monthYear = row.ContainsKey("MonthYear") ? row["MonthYear"]?.ToString() ?? "" : "";
+                    var balance = row.ContainsKey("Balance") && decimal.TryParse(row["Balance"]?.ToString(), out var bal) ? bal : 0;
+
+                    if (string.IsNullOrEmpty(accCode)) continue;
+
+                    if (!accountBalances.ContainsKey(accCode))
+                    {
+                        accountBalances[accCode] = new MonthlyAccountBalanceItem
+                        {
+                            AccCode = accCode,
+                            AccName = accName,
+                            MonthlyBalances = new Dictionary<string, decimal>(),
+                            Total = 0
+                        };
+                    }
+
+                    if (!string.IsNullOrEmpty(monthYear))
+                    {
+                        accountBalances[accCode].MonthlyBalances[monthYear] = balance;
+                        accountBalances[accCode].Total += balance;
+                    }
+                }
+
+                // Ensure all accounts have entries for all months (with 0 values)
+                var monthlyAccountBalanceItems = new List<MonthlyAccountBalanceItem>();
+                foreach (var account in accountBalances.Values)
+                {
+                    foreach (var month in monthColumns)
+                    {
+                        if (!account.MonthlyBalances.ContainsKey(month))
+                        {
+                            account.MonthlyBalances[month] = 0;
+                        }
+                    }
+                    monthlyAccountBalanceItems.Add(account);
+                }
+
+                return Ok(new MonthlyAccountBalanceResponse
+                {
+                    Success = true,
+                    Message = "Monthly Account Balance retrieved successfully",
+                    Data = monthlyAccountBalanceItems.OrderBy(x => x.AccCode).ToList(),
+                    MonthColumns = monthColumns,
+                    FromDate = from,
+                    ToDate = to,
+                    FromAccount = fromAcc,
+                    UptoAccount = uptoAcc
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting monthly account balance");
+                return StatusCode(500, new MonthlyAccountBalanceResponse
+                {
+                    Success = false,
+                    Message = "Internal server error"
+                });
+            }
+        }
+
+        // 3 Trial Balance Report
+        [HttpGet("three-trial-balance")]
+        public async Task<ActionResult<ThreeTrialBalanceResponse>> GetThreeTrialBalance(
+            [FromQuery] DateTime? fromDate = null, 
+            [FromQuery] DateTime? toDate = null,
+            [FromQuery] string? fromAccount = null,
+            [FromQuery] string? uptoAccount = null)
+        {
+            try
+            {
+                var userId = GetCurrentUserId();
+                var user = await _authService.GetActiveUserAsync(userId);
+                
+                if (user == null)
+                {
+                    return BadRequest(new ThreeTrialBalanceResponse
+                    {
+                        Success = false,
+                        Message = "No active database connection found. Please set up your database connection first."
+                    });
+                }
+
+                // Use provided dates or default to current date
+                var from = fromDate ?? DateTime.Now;
+                var to = toDate ?? DateTime.Now;
+                var fromDateString = from.ToString("yyyy/MM/dd");
+                var toDateString = to.ToString("yyyy/MM/dd");
+
+                // Default account range if not provided
+                var fromAcc = fromAccount ?? "1-01-01-0000";
+                var uptoAcc = uptoAccount ?? "1-01-01-9999";
+
+                // Convert account codes to numeric for range filtering
+                var fromAccountNumeric = long.Parse(fromAcc.Replace("-", ""));
+                var uptoAccountNumeric = long.Parse(uptoAcc.Replace("-", ""));
+
+                // 3 Trial Balance SQL query
+                // Start from customer table to include all accounts, even those with no transactions before fromDate
+                var query = $@"
+                    SELECT c.acc_code as AccCode, c.acc_name as AccName, 
+                           ISNULL(a.prev_bal, 0) as PrevBal, 
+                           ISNULL(a.bal_type, 'Cr.') as BalType,
+                           ISNULL(b.cur_debit,0) as CurDebit, 
+                           ISNULL(b.cur_credit,0) as CurCredit,
+                           ABS((ISNULL(b.cur_debit,0)-ISNULL(b.cur_credit,0))+ISNULL(a.prev_bal,0)) as CurBal,
+                           CASE WHEN (ISNULL(b.cur_debit,0)-ISNULL(b.cur_credit,0))+ISNULL(a.prev_bal,0) >0 THEN 'Dr.' ELSE 'Cr.' END as CurBalType
+                    FROM customer c
+                    LEFT JOIN (
+                        SELECT acc_code, SUM(dr_amount)-SUM(cr_amount) as prev_bal,
+                               CASE WHEN SUM(dr_amount)-SUM(cr_amount) >0 THEN 'Dr.' ELSE 'Cr.' END as bal_type
+                        FROM view_gjournal WHERE vouch_Date < '{fromDateString}' 
+                        GROUP BY acc_code
+                    ) as a ON c.acc_code = a.acc_code
+                    LEFT JOIN (
+                        SELECT acc_code, SUM(dr_amount) as cur_debit, SUM(cr_amount) as cur_credit 
+                        FROM view_gjournal WHERE vouch_Date BETWEEN '{fromDateString}' AND '{toDateString}' 
+                        GROUP BY acc_code
+                    ) as b ON c.acc_code = b.acc_code
+                    WHERE CAST(REPLACE(c.acc_code, '-', '') AS BIGINT) >= {fromAccountNumeric}
+                      AND CAST(REPLACE(c.acc_code, '-', '') AS BIGINT) <= {uptoAccountNumeric}
+                    ORDER BY c.acc_code";
+
+                var results = await _dataAccessService.ExecuteQueryAsync(user, query);
+                
+                var threeTrialBalanceItems = new List<ThreeTrialBalanceItem>();
+                decimal totalPrevBal = 0;
+                decimal totalCurDebit = 0;
+                decimal totalCurCredit = 0;
+                decimal totalCurBal = 0;
+
+                foreach (var row in results)
+                {
+                    var item = new ThreeTrialBalanceItem
+                    {
+                        AccCode = row.ContainsKey("AccCode") ? row["AccCode"]?.ToString() ?? "" : "",
+                        AccName = row.ContainsKey("AccName") ? row["AccName"]?.ToString() ?? "" : "",
+                        PrevBal = row.ContainsKey("PrevBal") && decimal.TryParse(row["PrevBal"]?.ToString(), out var prevBal) ? Math.Abs(prevBal) : 0,
+                        BalType = row.ContainsKey("BalType") ? row["BalType"]?.ToString() ?? "" : "",
+                        CurDebit = row.ContainsKey("CurDebit") && decimal.TryParse(row["CurDebit"]?.ToString(), out var curDebit) ? curDebit : 0,
+                        CurCredit = row.ContainsKey("CurCredit") && decimal.TryParse(row["CurCredit"]?.ToString(), out var curCredit) ? curCredit : 0,
+                        CurBal = row.ContainsKey("CurBal") && decimal.TryParse(row["CurBal"]?.ToString(), out var curBal) ? curBal : 0,
+                        CurBalType = row.ContainsKey("CurBalType") ? row["CurBalType"]?.ToString() ?? "" : ""
+                    };
+
+                    threeTrialBalanceItems.Add(item);
+                    totalPrevBal += item.PrevBal;
+                    totalCurDebit += item.CurDebit;
+                    totalCurCredit += item.CurCredit;
+                    totalCurBal += item.CurBal;
+                }
+
+                return Ok(new ThreeTrialBalanceResponse
+                {
+                    Success = true,
+                    Message = "3 Trial Balance retrieved successfully",
+                    Data = threeTrialBalanceItems,
+                    FromDate = from,
+                    ToDate = to,
+                    FromAccount = fromAcc,
+                    UptoAccount = uptoAcc,
+                    TotalPrevBal = totalPrevBal,
+                    TotalCurDebit = totalCurDebit,
+                    TotalCurCredit = totalCurCredit,
+                    TotalCurBal = totalCurBal
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting 3 trial balance");
+                return StatusCode(500, new ThreeTrialBalanceResponse
+                {
+                    Success = false,
+                    Message = "Internal server error"
+                });
+            }
+        }
+
+        // Account Ledger Report
+        [HttpGet("ledger")]
+        public async Task<ActionResult<LedgerReportResponse>> GetAccountLedger(
+            [FromQuery] string accountId,
+            [FromQuery] DateTime fromDate,
+            [FromQuery] DateTime toDate)
+        {
+            try
+            {
+                var userId = GetCurrentUserId();
+                var user = await _authService.GetActiveUserAsync(userId);
+                
+                if (user == null)
+                {
+                    return BadRequest(new LedgerReportResponse
+                    {
+                        Success = false,
+                        Message = "No active database connection found. Please set up your database connection first."
+                    });
+                }
+
+                if (string.IsNullOrEmpty(accountId))
+                {
+                    return BadRequest(new LedgerReportResponse
+                    {
+                        Success = false,
+                        Message = "Account ID is required."
+                    });
+                }
+
+                var fromDateString = fromDate.ToString("yyyy/MM/dd");
+                var toDateString = toDate.ToString("yyyy/MM/dd");
+
+                // Get account name
+                var accountQuery = $"SELECT acc_name FROM customer WHERE acc_code = '{accountId}'";
+                var accountResult = await _dataAccessService.ExecuteQueryAsync(user, accountQuery);
+                var accountName = accountResult.FirstOrDefault()?["acc_name"]?.ToString() ?? "";
+
+                // Ledger query using client's exact SQL pattern
+                var ledgerQuery = $@"
+                    declare @stDate as date,@enDate as date,@accountId as varchar(12)
+                    set @stDate = '{fromDateString}'
+                    set @enDate = '{toDateString}'
+                    set @accountId = '{accountId}'
+
+                    ---- Previous Balance
+                    select *  into #ledger from 
+                    (select '000000' as vouch_no,'' as vouch_date,'' as acc_code,'Previous Balance' descript,
+                    case when sum(dr_amount)-sum(cr_amount) >0 then abs(sum(dr_amount)-sum(cr_amount)) else 0 end as debit,
+                    case when sum(dr_amount)-sum(cr_amount) <0 then abs(sum(dr_amount)-sum(cr_amount)) else 0 end as credit,
+                    0 as balance
+                     from view_gjournal where acc_code = @accountId and vouch_Date <@stDate 
+                    ------ current Record 
+                    union all
+                    select  vouch_no,vouch_date,acc_code, descript,dr_amount,cr_amount,0 as balance
+                     from view_gjournal where acc_code = @accountId and vouch_Date between @stDate and @enDate 
+                     ) as a order by vouch_Date
+
+                    SELECT 
+                        a.vouch_no,
+                        a.vouch_date,
+                        a.acc_code,
+                        a.descript,
+                        a.debit,
+                        a.credit,
+                        
+                        -- Running Balance
+                        (
+                            SELECT SUM(x.debit - x.credit)
+                            FROM #ledger x
+                            WHERE x.vouch_date <= a.vouch_date
+                              AND x.vouch_no <= a.vouch_no
+                        ) AS balance,
+                        
+                        -- Balance Type
+                        IIF(
+                            (
+                                SELECT SUM(x.debit - x.credit)
+                                FROM #ledger x
+                                WHERE x.vouch_date <= a.vouch_date
+                                  AND x.vouch_no <= a.vouch_no
+                            ) >= 0,
+                            'Dr', 'Cr'
+                        ) AS bal_type
+
+                    FROM #ledger a
+                    ORDER BY a.vouch_date, a.vouch_no;
+
+                    DROP TABLE #ledger";
+
+                var results = await _dataAccessService.ExecuteQueryAsync(user, ledgerQuery);
+                
+                var ledgerItems = new List<LedgerItem>();
+                decimal totalDebit = 0;
+                decimal totalCredit = 0;
+
+                foreach (var row in results)
+                {
+                    var item = new LedgerItem
+                    {
+                        VouchNo = row.ContainsKey("vouch_no") ? row["vouch_no"]?.ToString() ?? "" : "",
+                        VouchDate = row.ContainsKey("vouch_date") && DateTime.TryParse(row["vouch_date"]?.ToString(), out var date) ? date : DateTime.MinValue,
+                        AccCode = row.ContainsKey("acc_code") ? row["acc_code"]?.ToString() ?? "" : "",
+                        Descript = row.ContainsKey("descript") ? row["descript"]?.ToString() ?? "" : "",
+                        Debit = row.ContainsKey("debit") && decimal.TryParse(row["debit"]?.ToString(), out var debit) ? debit : 0,
+                        Credit = row.ContainsKey("credit") && decimal.TryParse(row["credit"]?.ToString(), out var credit) ? credit : 0,
+                        Balance = row.ContainsKey("balance") && decimal.TryParse(row["balance"]?.ToString(), out var balance) ? Math.Abs(balance) : 0,
+                        BalType = row.ContainsKey("bal_type") ? row["bal_type"]?.ToString() ?? "" : ""
+                    };
+
+                    ledgerItems.Add(item);
+                    totalDebit += item.Debit;
+                    totalCredit += item.Credit;
+                }
+
+                return Ok(new LedgerReportResponse
+                {
+                    Success = true,
+                    Message = "Account Ledger retrieved successfully",
+                    Data = ledgerItems,
+                    FromDate = fromDate,
+                    ToDate = toDate,
+                    AccountCode = accountId,
+                    AccountName = accountName,
+                    TotalDebit = totalDebit,
+                    TotalCredit = totalCredit
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting account ledger");
+                return StatusCode(500, new LedgerReportResponse
+                {
+                    Success = false,
+                    Message = "Internal server error"
+                });
+            }
+        }
+
+        // Account Position Report
+        [HttpGet("account-position")]
+        public async Task<ActionResult<AccountPositionResponse>> GetAccountPosition(
+            [FromQuery] string accountId,
+            [FromQuery] DateTime uptoDate)
+        {
+            try
+            {
+                var userId = GetCurrentUserId();
+                var user = await _authService.GetActiveUserAsync(userId);
+                
+                if (user == null)
+                {
+                    return BadRequest(new AccountPositionResponse
+                    {
+                        Success = false,
+                        Message = "No active database connection found. Please set up your database connection first."
+                    });
+                }
+
+                if (string.IsNullOrEmpty(accountId))
+                {
+                    return BadRequest(new AccountPositionResponse
+                    {
+                        Success = false,
+                        Message = "Account ID is required."
+                    });
+                }
+
+                var uptoDateString = uptoDate.ToString("yyyy/MM/dd");
+
+                // Get account name
+                var accountQuery = $"SELECT acc_name FROM customer WHERE acc_code = '{accountId}'";
+                var accountResult = await _dataAccessService.ExecuteQueryAsync(user, accountQuery);
+                var accountName = accountResult.FirstOrDefault()?["acc_name"]?.ToString() ?? "";
+
+                // Calculate totals up to the specified date
+                var totalsQuery = $@"
+                    SELECT 
+                        SUM(ISNULL(dr_amount, 0)) as TotalDebit,
+                        SUM(ISNULL(cr_amount, 0)) as TotalCredit
+                    FROM view_gjournal 
+                    WHERE acc_code = '{accountId}' 
+                    AND vouch_date <= '{uptoDateString}'";
+
+                var totalsResult = await _dataAccessService.ExecuteQueryAsync(user, totalsQuery);
+                var firstRow = totalsResult.FirstOrDefault();
+
+                decimal totalDebit = 0;
+                decimal totalCredit = 0;
+
+                if (firstRow != null)
+                {
+                    totalDebit = firstRow.ContainsKey("TotalDebit") && decimal.TryParse(firstRow["TotalDebit"]?.ToString(), out var debit) ? debit : 0;
+                    totalCredit = firstRow.ContainsKey("TotalCredit") && decimal.TryParse(firstRow["TotalCredit"]?.ToString(), out var credit) ? credit : 0;
+                }
+
+                // Calculate balance
+                decimal balance = totalDebit - totalCredit;
+                string balanceType = balance >= 0 ? "Dr" : "Cr";
+                decimal balanceAmount = Math.Abs(balance);
+
+                return Ok(new AccountPositionResponse
+                {
+                    Success = true,
+                    Message = "Account position retrieved successfully",
+                    AccountCode = accountId,
+                    AccountName = accountName,
+                    TotalDebit = totalDebit,
+                    TotalCredit = totalCredit,
+                    Balance = balanceAmount,
+                    BalanceType = balanceType,
+                    UptoDate = uptoDate
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting account position");
+                return StatusCode(500, new AccountPositionResponse
+                {
+                    Success = false,
+                    Message = "Internal server error"
+                });
+            }
+        }
+
+        // Sales Summary Report - EXAMPLE using ClientDataService
+        // This demonstrates the hybrid EF approach for simpler reports
+        [HttpGet("sales-summary")]
+        public async Task<ActionResult> GetSalesSummary([FromQuery] DateTime? fromDate = null, [FromQuery] DateTime? toDate = null)
+        {
+            try
+            {
+                var userId = GetCurrentUserId();
+                var user = await _authService.GetActiveUserAsync(userId);
+                
+                if (user == null)
+                {
+                    return BadRequest(new { Success = false, Message = "No active database connection found." });
+                }
+
+                // Use ClientDataService for simpler reports
+                // The service wraps FromSqlRaw() for better architecture
+                var summary = await _clientDataService.GetSalesSummaryAsync(user, fromDate, toDate);
+                
+                return Ok(new
+                {
+                    Success = true,
+                    Message = "Sales summary retrieved successfully",
+                    Data = summary,
+                    FromDate = fromDate,
+                    ToDate = toDate
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting sales summary");
+                return StatusCode(500, new { Success = false, Message = "Internal server error" });
+            }
+        }
+
+        // Cash Book Report
+        [HttpGet("cash-book")]
+        public async Task<ActionResult<CashBookResponse>> GetCashBook([FromQuery] DateTime? fromDate = null, [FromQuery] DateTime? toDate = null)
+        {
+            var stopwatch = Stopwatch.StartNew();
+            try
+            {
+                var userId = GetCurrentUserId();
+                var user = await _authService.GetActiveUserAsync(userId);
+                
+                if (user == null)
+                {
+                    return BadRequest(new CashBookResponse
+                    {
+                        Success = false,
+                        Message = "User not found or inactive"
+                    });
+                }
+
+                // Use provided dates or default to current date
+                var reportFromDate = fromDate ?? DateTime.Now;
+                var reportToDate = toDate ?? DateTime.Now;
+
+                // Main cash book query - matches client desktop query exactly
+                // Uses view_cashBook directly for better performance
+                // If view_cashBook doesn't exist, falls back to optimized inline logic
+                var cashBookQuery = $@"
+                    declare @stDate as date,@enDate as date
+                    set @stDate = '{reportFromDate:yyyy/MM/dd}'
+                    set @enDate = '{reportToDate:yyyy/MM/dd}'
+
+                    select a.*,b.acc_name as ac_name from (
+                    select 0 as sr_no,'' trans_Date,'' as acc_code,'' as acc_name, 'Previous Balance' as descript,'' as vouch_no,
+                    case when sum(dr_amount)-sum(Cr_amount) >0 then abs(sum(dr_amount)-sum(Cr_amount)) else 0 end as Receipts,
+                    case when sum(dr_amount)-sum(Cr_amount) <0 then abs(sum(dr_amount)-sum(Cr_amount)) else 0 end as Payment
+                    from view_gjournal  where acc_code =(select cash_ac from acc_desc) and vouch_Date <@stDate
+                    union all
+                    select 1 as sr_no,vouch_Date as trans_Date,acc_code,'' as acc_name, descript, vouch_no,
+                     dr_amount as Receipts,0 as payment
+                    from view_cashBook  where  vouch_Date between @stDate and @enDate
+                    and dr_amount >0
+                    union all 
+                    select 2 as sr_no,vouch_Date as trans_Date,acc_code,'' as acc_name, descript, vouch_no,
+                    0 as Receipts,CR_AMOUNT as payment
+                    from view_cashBook  where  vouch_Date between @stDate and @enDate and cr_amount >0
+                    ) as a left join customer b on a.acc_code=b.acc_code
+                    order by trans_Date,sr_no";
+
+                List<Dictionary<string, object>> results;
+                try
+                {
+                    // Try using view_cashBook directly (matches client query)
+                    results = await _dataAccessService.ExecuteQueryAsync(user, cashBookQuery, commandTimeout: 120);
+                }
+                catch (System.Data.SqlClient.SqlException ex) when (ex.Message.Contains("Invalid object name") && ex.Message.Contains("view_cashBook"))
+                {
+                    // Fall back to optimized inline logic if view_cashBook doesn't exist
+                    _logger.LogInformation("view_cashBook not found, using inline logic");
+                    var fallbackQuery = $@"
+                        declare @stDate as date, @enDate as date, @cashAc varchar(12)
+                        set @stDate = '{reportFromDate:yyyy/MM/dd}'
+                        set @enDate = '{reportToDate:yyyy/MM/dd}'
+                        set @cashAc = (select cash_ac from acc_desc)
+
+                        ;WITH CashVouchersInRange AS (
+                            SELECT DISTINCT vouch_no 
+                            FROM view_gjournal 
+                            WHERE acc_code = @cashAc
+                            AND vouch_Date between @stDate and @enDate
+                        )
+                        select a.*, b.acc_name as ac_name from (
+                            select 0 as sr_no, '' trans_Date, '' as acc_code, '' as acc_name, 'Previous Balance' as descript, '' as vouch_no,
+                            case when sum(dr_amount)-sum(Cr_amount) >0 then abs(sum(dr_amount)-sum(Cr_amount)) else 0 end as Receipts,
+                            case when sum(dr_amount)-sum(Cr_amount) <0 then abs(sum(dr_amount)-sum(Cr_amount)) else 0 end as Payment
+                            from view_gjournal where acc_code = @cashAc and vouch_Date < @stDate
+                            union all
+                            select 1 as sr_no, g.vouch_Date as trans_Date, g.acc_code, '' as acc_name, g.descript, g.vouch_no,
+                            g.dr_amount as Receipts, 0 as payment
+                            from view_gjournal g
+                            INNER JOIN CashVouchersInRange cv ON g.vouch_no = cv.vouch_no
+                            where g.vouch_Date between @stDate and @enDate
+                            and g.dr_amount > 0 
+                            and g.acc_code <> @cashAc
+                            and LEFT(g.vouch_no, 2) <> 'OB'
+                            union all 
+                            select 2 as sr_no, g.vouch_Date as trans_Date, g.acc_code, '' as acc_name, g.descript, g.vouch_no,
+                            0 as Receipts, g.cr_amount as payment
+                            from view_gjournal g
+                            INNER JOIN CashVouchersInRange cv ON g.vouch_no = cv.vouch_no
+                            where g.vouch_Date between @stDate and @enDate 
+                            and g.cr_amount > 0
+                            and g.acc_code <> @cashAc
+                            and LEFT(g.vouch_no, 2) <> 'OB'
+                        ) as a left join customer b on a.acc_code=b.acc_code
+                        order by trans_Date, sr_no";
+                    results = await _dataAccessService.ExecuteQueryAsync(user, fallbackQuery, commandTimeout: 120);
+                }
+                
+                var cashBookItems = new List<CashBookItem>();
+                decimal totalReceipts = 0;
+                decimal totalPayments = 0;
+
+                foreach (var row in results)
+                {
+                    var item = new CashBookItem
+                    {
+                        SrNo = row.ContainsKey("sr_no") && int.TryParse(row["sr_no"]?.ToString(), out var srNo) ? srNo : 0,
+                        TransDate = row.ContainsKey("trans_Date") && !string.IsNullOrEmpty(row["trans_Date"]?.ToString()) && 
+                                   DateTime.TryParse(row["trans_Date"]?.ToString(), out var transDate) ? transDate : null,
+                        AccCode = row.ContainsKey("acc_code") ? row["acc_code"]?.ToString() ?? "" : "",
+                        AccName = row.ContainsKey("ac_name") ? row["ac_name"]?.ToString() ?? "" : "",
+                        Description = row.ContainsKey("descript") ? row["descript"]?.ToString() ?? "" : "",
+                        VoucherNo = row.ContainsKey("vouch_no") ? row["vouch_no"]?.ToString() ?? "" : "",
+                        Receipts = row.ContainsKey("Receipts") && decimal.TryParse(row["Receipts"]?.ToString(), out var receipts) ? receipts : 0,
+                        Payments = row.ContainsKey("Payment") && decimal.TryParse(row["Payment"]?.ToString(), out var payments) ? payments : 0
+                    };
+
+                    cashBookItems.Add(item);
+                    totalReceipts += item.Receipts;
+                    totalPayments += item.Payments;
+                }
+
+                stopwatch.Stop();
+
+                return Ok(new CashBookResponse
+                {
+                    Success = true,
+                    Message = "Cash Book retrieved successfully",
+                    Data = cashBookItems,
+                    FromDate = reportFromDate,
+                    ToDate = reportToDate,
+                    TotalReceipts = totalReceipts,
+                    TotalPayments = totalPayments,
+                    CashBalance = totalReceipts - totalPayments,
+                    ProcessingTimeMs = stopwatch.ElapsedMilliseconds
+                });
+            }
+            catch (Exception ex)
+            {
+                stopwatch.Stop();
+                _logger.LogError(ex, "Error getting cash book");
+                return StatusCode(500, new CashBookResponse
+                {
+                    Success = false,
+                    Message = $"Internal server error: {ex.Message}",
+                    ProcessingTimeMs = stopwatch.ElapsedMilliseconds
+                });
+            }
+        }
+
+        // Journal Book Report
+        [HttpGet("journal-book")]
+        public async Task<ActionResult<JournalBookResponse>> GetJournalBook([FromQuery] DateTime? fromDate = null, [FromQuery] DateTime? toDate = null)
+        {
+            var stopwatch = Stopwatch.StartNew();
+            try
+            {
+                var userId = GetCurrentUserId();
+                var user = await _authService.GetActiveUserAsync(userId);
+                
+                if (user == null)
+                {
+                    return BadRequest(new JournalBookResponse
+                    {
+                        Success = false,
+                        Message = "No active database connection found. Please set up your database connection first."
+                    });
+                }
+
+                // Use provided dates or default to current date
+                var reportFromDate = fromDate ?? DateTime.Now;
+                var reportToDate = toDate ?? DateTime.Now;
+                var fromDateString = reportFromDate.ToString("yyyy/MM/dd");
+                var toDateString = reportToDate.ToString("yyyy/MM/dd");
+
+                // Journal Book SQL query - get all entries with account names
+                // Only include Journal Voucher entries (voucher numbers starting with 'JV')
+                // Exclude Opening Balance records (voucher numbers starting with 'OB')
+                var journalBookQuery = $@"
+                    SELECT 
+                        v.vouch_date as VouchDate,
+                        v.vouch_no as VouchNo,
+                        v.acc_code as AccCode,
+                        ISNULL(c.acc_name, '') as AccName,
+                        ISNULL(v.descript, '') as Description,
+                        ISNULL(v.dr_amount, 0) as Receipts,
+                        ISNULL(v.cr_amount, 0) as Payments,
+                        ROW_NUMBER() OVER (PARTITION BY v.vouch_no ORDER BY v.dr_amount DESC, v.cr_amount DESC) as RowNum
+                    FROM view_gjournal v
+                    LEFT JOIN customer c ON v.acc_code = c.acc_code
+                    WHERE v.vouch_date >= '{fromDateString}' 
+                      AND v.vouch_date <= '{toDateString}'
+                      AND LEFT(v.vouch_no, 2) = 'JV'
+                    ORDER BY v.vouch_date, v.vouch_no, RowNum";
+
+                var results = await _dataAccessService.ExecuteQueryAsync(user, journalBookQuery, commandTimeout: 120);
+                
+                // Group entries by voucher number and process
+                var voucherGroups = results
+                    .GroupBy(row => 
+                        row.ContainsKey("VouchNo") ? row["VouchNo"]?.ToString() ?? "" : ""
+                    )
+                    .Where(g => !string.IsNullOrEmpty(g.Key))
+                    .Select(g => new
+                    {
+                        VoucherNo = g.Key,
+                        VoucherDate = g.First().ContainsKey("VouchDate") && DateTime.TryParse(g.First()["VouchDate"]?.ToString(), out var date) ? date : DateTime.MinValue,
+                        Entries = g.OrderBy(e => 
+                            e.ContainsKey("RowNum") && int.TryParse(e["RowNum"]?.ToString(), out var rowNum) ? rowNum : 0
+                        ).ToList()
+                    })
+                    .OrderBy(g => g.VoucherDate)
+                    .ThenBy(g => g.VoucherNo)
+                    .ToList();
+
+                var journalBookItems = new List<JournalBookItem>();
+                decimal totalReceipts = 0;
+                decimal totalPayments = 0;
+
+                foreach (var voucherGroup in voucherGroups)
+                {
+                    var voucherReceipts = 0m;
+                    var voucherPayments = 0m;
+                    bool isFirstEntry = true;
+
+                    foreach (var row in voucherGroup.Entries)
+                    {
+                        var receipts = row.ContainsKey("Receipts") && decimal.TryParse(row["Receipts"]?.ToString(), out var r) ? r : 0;
+                        var payments = row.ContainsKey("Payments") && decimal.TryParse(row["Payments"]?.ToString(), out var p) ? p : 0;
+                        var accCode = row.ContainsKey("AccCode") ? row["AccCode"]?.ToString() ?? "" : "";
+                        var accName = row.ContainsKey("AccName") ? row["AccName"]?.ToString() ?? "" : "";
+                        var description = row.ContainsKey("Description") ? row["Description"]?.ToString() ?? "" : "";
+
+                        voucherReceipts += receipts;
+                        voucherPayments += payments;
+
+                        // Build particulars: account name + description
+                        var particulars = "";
+                        if (!string.IsNullOrEmpty(accName))
+                        {
+                            particulars = accName.Trim();
+                        }
+                        if (!string.IsNullOrEmpty(description))
+                        {
+                            if (!string.IsNullOrEmpty(particulars))
+                            {
+                                particulars += ", " + description.Trim();
+                            }
+                            else
+                            {
+                                particulars = description.Trim();
+                            }
+                        }
+
+                        var item = new JournalBookItem
+                        {
+                            Date = isFirstEntry ? voucherGroup.VoucherDate : null,
+                            Particulars = particulars,
+                            VoucherNo = voucherGroup.VoucherNo,
+                            Receipts = receipts,
+                            Payments = payments,
+                            SrNo = 0,
+                            AccCode = accCode,
+                            AccName = accName,
+                            Description = description,
+                            IsTotalRow = false
+                        };
+
+                        journalBookItems.Add(item);
+                        isFirstEntry = false;
+                    }
+
+                    // Add total row for this voucher
+                    journalBookItems.Add(new JournalBookItem
+                    {
+                        Date = null,
+                        Particulars = "Total:",
+                        VoucherNo = voucherGroup.VoucherNo,
+                        Receipts = voucherReceipts,
+                        Payments = voucherPayments,
+                        SrNo = 0,
+                        AccCode = "",
+                        AccName = "",
+                        Description = "",
+                        IsTotalRow = true
+                    });
+
+                    totalReceipts += voucherReceipts;
+                    totalPayments += voucherPayments;
+                }
+
+                stopwatch.Stop();
+
+                return Ok(new JournalBookResponse
+                {
+                    Success = true,
+                    Message = "Journal Book retrieved successfully",
+                    Data = journalBookItems,
+                    FromDate = reportFromDate,
+                    ToDate = reportToDate,
+                    TotalReceipts = totalReceipts,
+                    TotalPayments = totalPayments
+                });
+            }
+            catch (Exception ex)
+            {
+                stopwatch.Stop();
+                _logger.LogError(ex, "Error getting journal book");
+                return StatusCode(500, new JournalBookResponse
+                {
+                    Success = false,
+                    Message = $"Internal server error: {ex.Message}"
+                });
+            }
+        }
+
+        // Transaction Journal Report
+        [HttpGet("transaction-journal")]
+        public async Task<ActionResult<TransactionJournalResponse>> GetTransactionJournal(
+            [FromQuery] DateTime fromDate, 
+            [FromQuery] DateTime toDate,
+            [FromQuery] string? documentTypes = null)
+        {
+            var stopwatch = Stopwatch.StartNew();
+            try
+            {
+                var userId = GetCurrentUserId();
+                var user = await _authService.GetActiveUserAsync(userId);
+                
+                if (user == null)
+                {
+                    return BadRequest(new TransactionJournalResponse
+                    {
+                        Success = false,
+                        Message = "No active database connection found. Please set up your database connection first."
+                    });
+                }
+
+                // Validate document types
+                if (string.IsNullOrWhiteSpace(documentTypes))
+                {
+                    return BadRequest(new TransactionJournalResponse
+                    {
+                        Success = false,
+                        Message = "Please select at least one document type."
+                    });
+                }
+
+                // Parse document types (comma-separated string like "SV,ES,SR,JV")
+                var selectedTypes = documentTypes.Split(',', StringSplitOptions.RemoveEmptyEntries)
+                    .Select(t => t.Trim().ToUpper())
+                    .Where(t => !string.IsNullOrEmpty(t))
+                    .ToList();
+
+                if (selectedTypes.Count == 0)
+                {
+                    return BadRequest(new TransactionJournalResponse
+                    {
+                        Success = false,
+                        Message = "Please select at least one document type."
+                    });
+                }
+
+                var fromDateString = fromDate.ToString("yyyy/MM/dd");
+                var toDateString = toDate.ToString("yyyy/MM/dd");
+
+                // Build voucher type filter - map to voucher prefixes
+                // SV = Sales Journal, ES = Purchase Journal, SR = Sales Return Journal,
+                // JV = Journal Voucher, CP = Cash Payment Journal, CR = Cash Receipts Journal,
+                // BP = Bank Payment Journal, BR = Bank Receipts Journal, IB = Inter Bank Journal
+                var voucherPrefixes = selectedTypes.Select(t => $"'{t}'").ToList();
+                var voucherFilter = string.Join(",", voucherPrefixes);
+
+                // Transaction Journal SQL query - get all entries with account names
+                // Filter by selected voucher types
+                // Join with sale_inv to get delivery and vehicle information for sales vouchers
+                var transactionJournalQuery = $@"
+                    SELECT 
+                        v.vouch_date as VouchDate,
+                        v.vouch_no as VouchNo,
+                        v.acc_code as AccCode,
+                        ISNULL(c.acc_name, '') as AccName,
+                        ISNULL(v.descript, '') as Description,
+                        ISNULL(v.dr_amount, 0) as Debit,
+                        ISNULL(v.cr_amount, 0) as Credit,
+                        ISNULL(si.deliver_to, '') as DeliverTo,
+                        ISNULL(si.vehicle_no, '') as VehicleNo,
+                        ROW_NUMBER() OVER (PARTITION BY v.vouch_no ORDER BY v.dr_amount DESC, v.cr_amount DESC) as RowNum
+                    FROM view_gjournal v
+                    LEFT JOIN customer c ON v.acc_code = c.acc_code
+                    LEFT JOIN sale_inv si ON LEFT(v.vouch_no, 2) = 'SV' 
+                        AND (
+                            RIGHT(v.vouch_no, LEN(v.vouch_no) - 2) = si.inv_no
+                            OR LTRIM(RIGHT(v.vouch_no, LEN(v.vouch_no) - 2), '0') = LTRIM(si.inv_no, '0')
+                        )
+                    WHERE v.vouch_date >= '{fromDateString}' 
+                      AND v.vouch_date <= '{toDateString}'
+                      AND LEFT(v.vouch_no, 2) IN ({voucherFilter})
+                    ORDER BY v.vouch_date, v.vouch_no, RowNum";
+
+                var results = await _dataAccessService.ExecuteQueryAsync(user, transactionJournalQuery, commandTimeout: 120);
+                
+                // Document type mapping: voucher prefix to display name
+                var documentTypeMapping = new Dictionary<string, string>
+                {
+                    { "SV", "Sales" },
+                    { "ES", "Purchase" },
+                    { "SR", "Sales Return" },
+                    { "JV", "Journal Voucher" },
+                    { "CP", "Cash Payment" },
+                    { "CR", "Cash Receipts" },
+                    { "BP", "Bank Payment" },
+                    { "BR", "Bank Receipts" },
+                    { "IB", "Inter Bank" }
+                };
+
+                // Group entries by voucher number first
+                var voucherGroups = results
+                    .GroupBy(row => 
+                        row.ContainsKey("VouchNo") ? row["VouchNo"]?.ToString() ?? "" : ""
+                    )
+                    .Where(g => !string.IsNullOrEmpty(g.Key))
+                    .Select(g => new
+                    {
+                        VoucherNo = g.Key,
+                        VoucherPrefix = g.Key.Length >= 2 ? g.Key.Substring(0, 2).ToUpper() : "",
+                        VoucherDate = g.First().ContainsKey("VouchDate") && DateTime.TryParse(g.First()["VouchDate"]?.ToString(), out var date) ? date : DateTime.MinValue,
+                        Entries = g.OrderBy(e => 
+                            e.ContainsKey("RowNum") && int.TryParse(e["RowNum"]?.ToString(), out var rowNum) ? rowNum : 0
+                        ).ToList()
+                    })
+                    .ToList();
+
+                // Group vouchers by document type (voucher prefix)
+                var documentTypeGroups = voucherGroups
+                    .GroupBy(vg => vg.VoucherPrefix)
+                    .Where(g => selectedTypes.Contains(g.Key))
+                    .ToDictionary(g => g.Key, g => g.OrderBy(v => v.VoucherDate).ThenBy(v => v.VoucherNo).ToList());
+
+                var transactionJournalItems = new List<TransactionJournalItem>();
+                decimal totalDebit = 0;
+                decimal totalCredit = 0;
+
+                // Process each document type in the order they were selected
+                foreach (var documentType in selectedTypes)
+                {
+                    if (!documentTypeGroups.ContainsKey(documentType))
+                        continue;
+
+                    // Add header row for this document type
+                    var documentTypeName = documentTypeMapping.ContainsKey(documentType) 
+                        ? documentTypeMapping[documentType] 
+                        : documentType;
+                    
+                    transactionJournalItems.Add(new TransactionJournalItem
+                    {
+                        Date = null,
+                        Particulars = "",
+                        VrNo = "",
+                        Debit = 0,
+                        Credit = 0,
+                        AccCode = "",
+                        AccName = "",
+                        Description = "",
+                        DeliverTo = "",
+                        VehicleNo = "",
+                        IsTotalRow = false,
+                        IsHeaderRow = true,
+                        DocumentTypeName = documentTypeName
+                    });
+
+                    // Process all vouchers for this document type
+                    var vouchersForType = documentTypeGroups[documentType];
+                    foreach (var voucherGroup in vouchersForType)
+                    {
+                        var voucherDebit = 0m;
+                        var voucherCredit = 0m;
+                        bool isFirstEntry = true;
+                        
+                        // Separate debit and credit entries
+                        var debitEntries = new List<Dictionary<string, object>>();
+                        var creditEntries = new List<Dictionary<string, object>>();
+                        
+                        // Extract DeliverTo and VehicleNo from any row in the voucher (should be same for all rows)
+                        string voucherDeliverTo = "";
+                        string voucherVehicleNo = "";
+
+                        foreach (var row in voucherGroup.Entries)
+                        {
+                            var debit = row.ContainsKey("Debit") && decimal.TryParse(row["Debit"]?.ToString(), out var d) ? d : 0;
+                            var credit = row.ContainsKey("Credit") && decimal.TryParse(row["Credit"]?.ToString(), out var c) ? c : 0;
+                            
+                            voucherDebit += debit;
+                            voucherCredit += credit;
+                            
+                            // Extract DeliverTo and VehicleNo from first row that has them
+                            if (string.IsNullOrEmpty(voucherDeliverTo) && row.ContainsKey("DeliverTo"))
+                            {
+                                var deliverToValue = row["DeliverTo"]?.ToString()?.Trim();
+                                if (!string.IsNullOrWhiteSpace(deliverToValue))
+                                {
+                                    voucherDeliverTo = deliverToValue;
+                                }
+                            }
+                            if (string.IsNullOrEmpty(voucherVehicleNo) && row.ContainsKey("VehicleNo"))
+                            {
+                                var vehicleNoValue = row["VehicleNo"]?.ToString()?.Trim();
+                                if (!string.IsNullOrWhiteSpace(vehicleNoValue))
+                                {
+                                    voucherVehicleNo = vehicleNoValue;
+                                }
+                            }
+                            
+                            if (debit > 0)
+                            {
+                                debitEntries.Add(row);
+                            }
+                            else if (credit > 0)
+                            {
+                                creditEntries.Add(row);
+                            }
+                        }
+
+                        // Add consolidated debit entry if there are any debits
+                        if (debitEntries.Count > 0)
+                        {
+                            // Get AccName from first debit entry (typically "NET SALE" or similar)
+                            var firstDebitRow = debitEntries.First();
+                            var debitAccName = firstDebitRow.ContainsKey("AccName") ? firstDebitRow["AccName"]?.ToString() ?? "" : "";
+                            
+                            var consolidatedDebitItem = new TransactionJournalItem
+                            {
+                                Date = voucherGroup.VoucherDate,
+                                Particulars = "Sales",
+                                VrNo = voucherGroup.VoucherNo,
+                                Debit = voucherDebit,
+                                Credit = 0,
+                                AccCode = "",
+                                AccName = debitAccName, // Preserve AccName from debit entries
+                                Description = "",
+                                DeliverTo = "",
+                                VehicleNo = "",
+                                IsTotalRow = false,
+                                IsHeaderRow = false,
+                                DocumentTypeName = ""
+                            };
+                            transactionJournalItems.Add(consolidatedDebitItem);
+                            isFirstEntry = false;
+                        }
+
+                        // Add credit entries as individual rows
+                        foreach (var row in creditEntries)
+                        {
+                            var credit = row.ContainsKey("Credit") && decimal.TryParse(row["Credit"]?.ToString(), out var c) ? c : 0;
+                            var accCode = row.ContainsKey("AccCode") ? row["AccCode"]?.ToString() ?? "" : "";
+                            var accName = row.ContainsKey("AccName") ? row["AccName"]?.ToString() ?? "" : "";
+                            var description = row.ContainsKey("Description") ? row["Description"]?.ToString() ?? "" : "";
+
+                            var item = new TransactionJournalItem
+                            {
+                                Date = isFirstEntry ? voucherGroup.VoucherDate : null,
+                                Particulars = "", // Empty - frontend will display AccName and Description separately
+                                VrNo = voucherGroup.VoucherNo,
+                                Debit = 0,
+                                Credit = credit,
+                                AccCode = accCode,
+                                AccName = accName, // Preserve AccName for bold display
+                                Description = description, // Preserve Description for second line display
+                                DeliverTo = voucherDeliverTo, // Use voucher-level delivery information
+                                VehicleNo = voucherVehicleNo, // Use voucher-level vehicle information
+                                IsTotalRow = false,
+                                IsHeaderRow = false,
+                                DocumentTypeName = ""
+                            };
+
+                            transactionJournalItems.Add(item);
+                            isFirstEntry = false;
+                        }
+
+                        // Add total row for this voucher - "Total:" goes in Vr.No column
+                        transactionJournalItems.Add(new TransactionJournalItem
+                        {
+                            Date = null,
+                            Particulars = "", // Empty for total rows
+                            VrNo = "Total:", // "Total:" goes in Vr.No column (column 3)
+                            Debit = voucherDebit,
+                            Credit = voucherCredit,
+                            AccCode = "",
+                            AccName = "",
+                            Description = "",
+                            DeliverTo = "",
+                            VehicleNo = "",
+                            IsTotalRow = true,
+                            IsHeaderRow = false,
+                            DocumentTypeName = ""
+                        });
+
+                        totalDebit += voucherDebit;
+                        totalCredit += voucherCredit;
+                    }
+                }
+
+                stopwatch.Stop();
+
+                return Ok(new TransactionJournalResponse
+                {
+                    Success = true,
+                    Message = "Transaction Journal retrieved successfully",
+                    Data = transactionJournalItems,
+                    FromDate = fromDate,
+                    ToDate = toDate,
+                    TotalDebit = totalDebit,
+                    TotalCredit = totalCredit,
+                    SelectedDocumentTypes = selectedTypes
+                });
+            }
+            catch (Exception ex)
+            {
+                stopwatch.Stop();
+                _logger.LogError(ex, "Error getting transaction journal");
+                return StatusCode(500, new TransactionJournalResponse
+                {
+                    Success = false,
+                    Message = $"Internal server error: {ex.Message}"
+                });
+            }
+        }
+
+        // Customer Aging Report
+        [HttpGet("customer-aging")]
+        public async Task<ActionResult<CustomerAgingResponse>> GetCustomerAging(
+            [FromQuery] string? fromAccount = null,
+            [FromQuery] string? uptoAccount = null,
+            [FromQuery] DateTime? asOnDate = null,
+            [FromQuery] string? reportType = null)
+        {
+            var stopwatch = Stopwatch.StartNew();
+            try
+            {
+                var userId = GetCurrentUserId();
+                var user = await _authService.GetActiveUserAsync(userId);
+                
+                if (user == null)
+                {
+                    return BadRequest(new CustomerAgingResponse
+                    {
+                        Success = false,
+                        Message = "No active database connection found. Please set up your database connection first."
+                    });
+                }
+
+                // Set defaults
+                var fromAcc = fromAccount ?? "1-01-01-0000";
+                var uptoAcc = uptoAccount ?? "1-01-01-9999";
+                var asOn = asOnDate ?? DateTime.Now;
+                var reportTypeValue = reportType?.ToLower() ?? "detailed";
+
+                var asOnDateString = asOn.ToString("yyyy/MM/dd");
+
+                // Convert account codes to numeric for range filtering
+                var fromAccountNumeric = long.Parse(fromAcc.Replace("-", ""));
+                var uptoAccountNumeric = long.Parse(uptoAcc.Replace("-", ""));
+
+                if (reportTypeValue == "summary")
+                {
+
+                    // Simplified query for summary
+                    var summaryQuerySimple = $@"
+                        declare @asOnDate as date
+                        set @asOnDate = '{asOnDateString}'
+
+                        SELECT 
+                            si.ac_code as AccCode,
+                            si.ac_name as AccName,
+                            si.inv_no as BillNo,
+                            si.inv_date as BillDate,
+                            si.grand_tot as BillAmount,
+                            ISNULL((
+                                SELECT SUM(ISNULL(cr_amount, 0))
+                                FROM view_gjournal vg
+                                WHERE vg.acc_code = si.ac_code
+                                    AND vg.vouch_date <= @asOnDate
+                                    AND LEFT(vg.vouch_no, 2) = 'SV'
+                                    AND LTRIM(RIGHT(vg.vouch_no, LEN(vg.vouch_no) - 2), '0') = LTRIM(si.inv_no, '0')
+                            ), 0) as PaidAmount,
+                            si.grand_tot - ISNULL((
+                                SELECT SUM(ISNULL(cr_amount, 0))
+                                FROM view_gjournal vg
+                                WHERE vg.acc_code = si.ac_code
+                                    AND vg.vouch_date <= @asOnDate
+                                    AND LEFT(vg.vouch_no, 2) = 'SV'
+                                    AND LTRIM(RIGHT(vg.vouch_no, LEN(vg.vouch_no) - 2), '0') = LTRIM(si.inv_no, '0')
+                            ), 0) as Pending,
+                            DATEDIFF(day, si.inv_date, @asOnDate) as Days
+                        FROM sale_inv si
+                        WHERE CAST(REPLACE(si.ac_code, '-', '') AS BIGINT) >= {fromAccountNumeric}
+                          AND CAST(REPLACE(si.ac_code, '-', '') AS BIGINT) <= {uptoAccountNumeric}
+                          AND si.inv_date <= @asOnDate
+                          AND si.grand_tot - ISNULL((
+                                SELECT SUM(ISNULL(cr_amount, 0))
+                                FROM view_gjournal vg
+                                WHERE vg.acc_code = si.ac_code
+                                    AND vg.vouch_date <= @asOnDate
+                                    AND LEFT(vg.vouch_no, 2) = 'SV'
+                                    AND LTRIM(RIGHT(vg.vouch_no, LEN(vg.vouch_no) - 2), '0') = LTRIM(si.inv_no, '0')
+                            ), 0) > 0
+                        ORDER BY si.ac_code, si.inv_date";
+
+                    var results = await _dataAccessService.ExecuteQueryAsync(user, summaryQuerySimple, commandTimeout: 120);
+
+                    // Group by customer and calculate aging buckets
+                    var customerGroups = results
+                        .GroupBy(row => 
+                            row.ContainsKey("AccCode") ? row["AccCode"]?.ToString() ?? "" : ""
+                        )
+                        .Where(g => !string.IsNullOrEmpty(g.Key))
+                        .ToList();
+
+                    var summaryItems = new List<CustomerAgingSummaryItem>();
+                    decimal totalBalance = 0;
+                    decimal total1To30 = 0;
+                    decimal total31To60 = 0;
+                    decimal total61To90 = 0;
+                    decimal total91To120 = 0;
+                    decimal totalAbove120 = 0;
+
+                    foreach (var customerGroup in customerGroups)
+                    {
+                        var firstRow = customerGroup.First();
+                        var accCode = firstRow.ContainsKey("AccCode") ? firstRow["AccCode"]?.ToString() ?? "" : "";
+                        var accName = firstRow.ContainsKey("AccName") ? firstRow["AccName"]?.ToString() ?? "" : "";
+                        
+                        decimal balance = 0;
+                        decimal days1To30 = 0;
+                        decimal days31To60 = 0;
+                        decimal days61To90 = 0;
+                        decimal days91To120 = 0;
+                        decimal above120 = 0;
+
+                        foreach (var row in customerGroup)
+                        {
+                            var pending = row.ContainsKey("Pending") && decimal.TryParse(row["Pending"]?.ToString(), out var p) ? p : 0;
+                            var days = row.ContainsKey("Days") && int.TryParse(row["Days"]?.ToString(), out var d) ? d : 0;
+
+                            balance += pending;
+
+                            if (days <= 30)
+                                days1To30 += pending;
+                            else if (days <= 60)
+                                days31To60 += pending;
+                            else if (days <= 90)
+                                days61To90 += pending;
+                            else if (days <= 120)
+                                days91To120 += pending;
+                            else
+                                above120 += pending;
+                        }
+
+                        if (balance > 0)
+                        {
+                            summaryItems.Add(new CustomerAgingSummaryItem
+                            {
+                                AccCode = accCode,
+                                AccName = accName,
+                                Balance = balance,
+                                Days1To30 = days1To30,
+                                Days31To60 = days31To60,
+                                Days61To90 = days61To90,
+                                Days91To120 = days91To120,
+                                Above120 = above120
+                            });
+
+                            totalBalance += balance;
+                            total1To30 += days1To30;
+                            total31To60 += days31To60;
+                            total61To90 += days61To90;
+                            total91To120 += days91To120;
+                            totalAbove120 += above120;
+                        }
+                    }
+
+                    stopwatch.Stop();
+
+                    return Ok(new CustomerAgingResponse
+                    {
+                        Success = true,
+                        Message = "Customer Aging Summary Report retrieved successfully",
+                        ReportType = "Summary",
+                        SummaryData = summaryItems.OrderBy(x => x.AccCode).ToList(),
+                        AsOnDate = asOn,
+                        FromAccount = fromAcc,
+                        UptoAccount = uptoAcc,
+                        TotalBalance = totalBalance,
+                        TotalDays1To30 = total1To30,
+                        TotalDays31To60 = total31To60,
+                        TotalDays61To90 = total61To90,
+                        TotalDays91To120 = total91To120,
+                        TotalAbove120 = totalAbove120
+                    });
+                }
+                else
+                {
+                    // Detailed Report - Show individual bills
+                    var detailedQuery = $@"
+                        declare @asOnDate as date
+                        set @asOnDate = '{asOnDateString}'
+
+                        SELECT 
+                            si.ac_code as AccCode,
+                            si.ac_name as AccName,
+                            CASE 
+                                WHEN si.inv_no LIKE 'OB-%' THEN si.inv_no
+                                ELSE 'SV' + RIGHT('000000' + CAST(si.inv_no AS VARCHAR(6)), 6)
+                            END as BillNo,
+                            si.inv_date as BillDate,
+                            NULL as DueDate,
+                            si.grand_tot as BillAmount,
+                            ISNULL((
+                                SELECT SUM(ISNULL(cr_amount, 0))
+                                FROM view_gjournal vg
+                                WHERE vg.acc_code = si.ac_code
+                                    AND vg.vouch_date <= @asOnDate
+                                    AND (
+                                        (LEFT(vg.vouch_no, 2) = 'SV' AND LTRIM(RIGHT(vg.vouch_no, LEN(vg.vouch_no) - 2), '0') = LTRIM(si.inv_no, '0'))
+                                        OR (LEFT(vg.vouch_no, 2) = 'OB' AND vg.vouch_no = si.inv_no)
+                                    )
+                            ), 0) as PaidAmount,
+                            si.grand_tot - ISNULL((
+                                SELECT SUM(ISNULL(cr_amount, 0))
+                                FROM view_gjournal vg
+                                WHERE vg.acc_code = si.ac_code
+                                    AND vg.vouch_date <= @asOnDate
+                                    AND (
+                                        (LEFT(vg.vouch_no, 2) = 'SV' AND LTRIM(RIGHT(vg.vouch_no, LEN(vg.vouch_no) - 2), '0') = LTRIM(si.inv_no, '0'))
+                                        OR (LEFT(vg.vouch_no, 2) = 'OB' AND vg.vouch_no = si.inv_no)
+                                    )
+                            ), 0) as Pending,
+                            DATEDIFF(day, si.inv_date, @asOnDate) as Days
+                        FROM sale_inv si
+                        WHERE CAST(REPLACE(si.ac_code, '-', '') AS BIGINT) >= {fromAccountNumeric}
+                          AND CAST(REPLACE(si.ac_code, '-', '') AS BIGINT) <= {uptoAccountNumeric}
+                          AND si.inv_date <= @asOnDate
+                          AND si.grand_tot - ISNULL((
+                                SELECT SUM(ISNULL(cr_amount, 0))
+                                FROM view_gjournal vg
+                                WHERE vg.acc_code = si.ac_code
+                                    AND vg.vouch_date <= @asOnDate
+                                    AND (
+                                        (LEFT(vg.vouch_no, 2) = 'SV' AND LTRIM(RIGHT(vg.vouch_no, LEN(vg.vouch_no) - 2), '0') = LTRIM(si.inv_no, '0'))
+                                        OR (LEFT(vg.vouch_no, 2) = 'OB' AND vg.vouch_no = si.inv_no)
+                                    )
+                            ), 0) > 0
+                        ORDER BY si.ac_code, si.inv_date";
+
+                    // Also need to handle opening balances from view_gjournal directly
+                    var openingBalanceQuery = $@"
+                        declare @asOnDate as date
+                        set @asOnDate = '{asOnDateString}'
+
+                        SELECT 
+                            acc_code as AccCode,
+                            ISNULL((
+                                SELECT acc_name FROM customer WHERE acc_code = vg.acc_code
+                            ), '') as AccName,
+                            vouch_no as BillNo,
+                            vouch_date as BillDate,
+                            NULL as DueDate,
+                            CASE WHEN SUM(dr_amount) - SUM(cr_amount) > 0 
+                                THEN SUM(dr_amount) - SUM(cr_amount) 
+                                ELSE 0 END as BillAmount,
+                            0 as PaidAmount,
+                            CASE WHEN SUM(dr_amount) - SUM(cr_amount) > 0 
+                                THEN SUM(dr_amount) - SUM(cr_amount) 
+                                ELSE 0 END as Pending,
+                            DATEDIFF(day, vouch_date, @asOnDate) as Days
+                        FROM view_gjournal vg
+                        WHERE LEFT(vouch_no, 2) = 'OB'
+                            AND vouch_date <= @asOnDate
+                            AND CAST(REPLACE(acc_code, '-', '') AS BIGINT) >= {fromAccountNumeric}
+                            AND CAST(REPLACE(acc_code, '-', '') AS BIGINT) <= {uptoAccountNumeric}
+                            AND acc_code IN (
+                                SELECT DISTINCT ac_code FROM sale_inv 
+                                WHERE CAST(REPLACE(ac_code, '-', '') AS BIGINT) >= {fromAccountNumeric}
+                                  AND CAST(REPLACE(ac_code, '-', '') AS BIGINT) <= {uptoAccountNumeric}
+                            )
+                        GROUP BY acc_code, vouch_no, vouch_date
+                        HAVING CASE WHEN SUM(dr_amount) - SUM(cr_amount) > 0 
+                            THEN SUM(dr_amount) - SUM(cr_amount) 
+                            ELSE 0 END > 0
+                        ORDER BY acc_code, vouch_date";
+
+                    var invoiceResults = await _dataAccessService.ExecuteQueryAsync(user, detailedQuery, commandTimeout: 120);
+                    var openingBalanceResults = await _dataAccessService.ExecuteQueryAsync(user, openingBalanceQuery, commandTimeout: 120);
+
+                    // Combine and process results
+                    var allResults = new List<Dictionary<string, object>>();
+                    allResults.AddRange(invoiceResults);
+                    allResults.AddRange(openingBalanceResults);
+
+                    // Group by customer and build detailed items
+                    var customerGroups = allResults
+                        .GroupBy(row => 
+                            row.ContainsKey("AccCode") ? row["AccCode"]?.ToString() ?? "" : ""
+                        )
+                        .Where(g => !string.IsNullOrEmpty(g.Key))
+                        .OrderBy(g => g.Key)
+                        .ToList();
+
+                    var detailedItems = new List<CustomerAgingDetailedItem>();
+                    decimal totalPending = 0;
+
+                    foreach (var customerGroup in customerGroups)
+                    {
+                        var firstRow = customerGroup.First();
+                        var accCode = firstRow.ContainsKey("AccCode") ? firstRow["AccCode"]?.ToString() ?? "" : "";
+                        var accName = firstRow.ContainsKey("AccName") ? firstRow["AccName"]?.ToString() ?? "" : "";
+                        
+                        decimal customerBalance = 0;
+
+                        // Add customer header
+                        detailedItems.Add(new CustomerAgingDetailedItem
+                        {
+                            AccCode = accCode,
+                            AccName = accName,
+                            IsCustomerHeader = true,
+                            CustomerBalance = null
+                        });
+
+                        // Add bill items
+                        foreach (var row in customerGroup.OrderBy(r => 
+                            r.ContainsKey("BillDate") && DateTime.TryParse(r["BillDate"]?.ToString(), out var date) ? date : DateTime.MinValue))
+                        {
+                            var billNo = row.ContainsKey("BillNo") ? row["BillNo"]?.ToString() ?? "" : "";
+                            var billDate = row.ContainsKey("BillDate") && DateTime.TryParse(row["BillDate"]?.ToString(), out var date) ? date : DateTime.MinValue;
+                            var dueDate = row.ContainsKey("DueDate") && row["DueDate"] != null && DateTime.TryParse(row["DueDate"]?.ToString(), out var dDate) ? (DateTime?)dDate : null;
+                            var days = row.ContainsKey("Days") && int.TryParse(row["Days"]?.ToString(), out var d) ? d : 0;
+                            var billAmount = row.ContainsKey("BillAmount") && decimal.TryParse(row["BillAmount"]?.ToString(), out var ba) ? ba : 0;
+                            var pending = row.ContainsKey("Pending") && decimal.TryParse(row["Pending"]?.ToString(), out var p) ? p : 0;
+
+                            if (pending > 0)
+                            {
+                                detailedItems.Add(new CustomerAgingDetailedItem
+                                {
+                                    AccCode = accCode,
+                                    AccName = accName,
+                                    BillNo = billNo,
+                                    BillDate = billDate,
+                                    DueDate = dueDate,
+                                    Days = days,
+                                    BillAmount = billAmount,
+                                    Pending = pending,
+                                    IsCustomerHeader = false,
+                                    IsTotalRow = false,
+                                    CustomerBalance = null
+                                });
+
+                                customerBalance += pending;
+                                totalPending += pending;
+                            }
+                        }
+
+                        // Update customer header with balance
+                        var customerHeaderIndex = detailedItems.FindLastIndex(item => item.AccCode == accCode && item.IsCustomerHeader);
+                        if (customerHeaderIndex >= 0)
+                        {
+                            detailedItems[customerHeaderIndex].CustomerBalance = customerBalance;
+                        }
+
+                        // Add customer total row
+                        if (customerBalance > 0)
+                        {
+                            detailedItems.Add(new CustomerAgingDetailedItem
+                            {
+                                AccCode = accCode,
+                                AccName = accName,
+                                IsTotalRow = true,
+                                CustomerBalance = customerBalance
+                            });
+                        }
+                    }
+
+                    stopwatch.Stop();
+
+                    return Ok(new CustomerAgingResponse
+                    {
+                        Success = true,
+                        Message = "Customer Aging Detailed Report retrieved successfully",
+                        ReportType = "Detailed",
+                        DetailedData = detailedItems,
+                        AsOnDate = asOn,
+                        FromAccount = fromAcc,
+                        UptoAccount = uptoAcc,
+                        TotalPending = totalPending
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                stopwatch.Stop();
+                _logger.LogError(ex, "Error getting customer aging report");
+                return StatusCode(500, new CustomerAgingResponse
+                {
+                    Success = false,
+                    Message = $"Internal server error: {ex.Message}"
+                });
+            }
+        }
+
+        // Supplier Aging Report
+        [HttpGet("supplier-aging")]
+        public async Task<ActionResult<SupplierAgingResponse>> GetSupplierAging(
+            [FromQuery] string? fromAccount = null,
+            [FromQuery] string? uptoAccount = null,
+            [FromQuery] DateTime? asOnDate = null,
+            [FromQuery] string? reportType = null,
+            [FromQuery] decimal? minBalance = null)
+        {
+            var stopwatch = Stopwatch.StartNew();
+            try
+            {
+                var userId = GetCurrentUserId();
+                var user = await _authService.GetActiveUserAsync(userId);
+                
+                if (user == null)
+                {
+                    return BadRequest(new SupplierAgingResponse
+                    {
+                        Success = false,
+                        Message = "No active database connection found. Please set up your database connection first."
+                    });
+                }
+
+                // Set defaults
+                var fromAcc = fromAccount ?? "0-00-00-0000";
+                var uptoAcc = uptoAccount ?? "0-00-00-0000";
+                var asOn = asOnDate ?? DateTime.Now;
+                var reportTypeValue = reportType?.ToLower() ?? "detailed";
+                var minBal = minBalance ?? 0;
+
+                var asOnDateString = asOn.ToString("yyyy/MM/dd");
+
+                // Convert account codes to numeric for range filtering
+                var fromAccountNumeric = long.Parse(fromAcc.Replace("-", ""));
+                var uptoAccountNumeric = long.Parse(uptoAcc.Replace("-", ""));
+
+                if (reportTypeValue == "summary")
+                {
+                    // Query BR and JV vouchers (purchase bills) from view_gjournal and match payments
+                    // Union with pur_inv entries that might not have vouchers
+                    var summaryQuery = $@"
+                        declare @asOnDate as date
+                        set @asOnDate = '{asOnDateString}'
+
+                        -- Get purchase bills from BR vouchers
+                        SELECT 
+                            br.acc_code as AccCode,
+                            ISNULL(c.acc_name, '') as AccName,
+                            br.vouch_no as BillNo,
+                            br.vouch_date as BillDate,
+                            SUM(br.cr_amount) as BillAmount,
+                            ISNULL(SUM(payments.dr_amount), 0) as PaidAmount,
+                            SUM(br.cr_amount) - ISNULL(SUM(payments.dr_amount), 0) as Pending,
+                            DATEDIFF(day, br.vouch_date, @asOnDate) as Days
+                        FROM view_gjournal br
+                        LEFT JOIN customer c ON c.acc_code = br.acc_code
+                        LEFT JOIN (
+                            SELECT 
+                                acc_code,
+                                vouch_no,
+                                SUM(dr_amount) as dr_amount
+                            FROM view_gjournal
+                            WHERE vouch_date <= @asOnDate
+                                AND (LEFT(vouch_no, 2) = 'BP' OR LEFT(vouch_no, 2) = 'JV')
+                            GROUP BY acc_code, vouch_no
+                        ) payments ON payments.acc_code = br.acc_code
+                            AND (
+                                (LEFT(payments.vouch_no, 2) = 'BP' AND LTRIM(RIGHT(payments.vouch_no, LEN(payments.vouch_no) - 2), '0') = LTRIM(RIGHT(br.vouch_no, LEN(br.vouch_no) - 2), '0'))
+                                OR (LEFT(payments.vouch_no, 2) = 'JV' AND LTRIM(RIGHT(payments.vouch_no, LEN(payments.vouch_no) - 2), '0') = LTRIM(RIGHT(br.vouch_no, LEN(br.vouch_no) - 2), '0'))
+                            )
+                        WHERE LEFT(br.vouch_no, 2) = 'BR'
+                            AND br.vouch_date <= @asOnDate
+                            AND CAST(REPLACE(br.acc_code, '-', '') AS BIGINT) >= {fromAccountNumeric}
+                            AND CAST(REPLACE(br.acc_code, '-', '') AS BIGINT) <= {uptoAccountNumeric}
+                            AND br.cr_amount > 0
+                        GROUP BY br.acc_code, c.acc_name, br.vouch_no, br.vouch_date
+                        HAVING SUM(br.cr_amount) - ISNULL(SUM(payments.dr_amount), 0) > {minBal}
+
+                        UNION ALL
+
+                        -- Get purchase bills from JV vouchers (when cr_amount > 0)
+                        SELECT 
+                            jv.acc_code as AccCode,
+                            ISNULL(c.acc_name, '') as AccName,
+                            jv.vouch_no as BillNo,
+                            jv.vouch_date as BillDate,
+                            SUM(jv.cr_amount) as BillAmount,
+                            ISNULL(SUM(payments.dr_amount), 0) as PaidAmount,
+                            SUM(jv.cr_amount) - ISNULL(SUM(payments.dr_amount), 0) as Pending,
+                            DATEDIFF(day, jv.vouch_date, @asOnDate) as Days
+                        FROM view_gjournal jv
+                        LEFT JOIN customer c ON c.acc_code = jv.acc_code
+                        LEFT JOIN (
+                            SELECT 
+                                acc_code,
+                                vouch_no,
+                                SUM(dr_amount) as dr_amount
+                            FROM view_gjournal
+                            WHERE vouch_date <= @asOnDate
+                                AND (LEFT(vouch_no, 2) = 'BP' OR LEFT(vouch_no, 2) = 'JV')
+                            GROUP BY acc_code, vouch_no
+                        ) payments ON payments.acc_code = jv.acc_code
+                            AND (
+                                (LEFT(payments.vouch_no, 2) = 'BP' AND LTRIM(RIGHT(payments.vouch_no, LEN(payments.vouch_no) - 2), '0') = LTRIM(RIGHT(jv.vouch_no, LEN(jv.vouch_no) - 2), '0'))
+                                OR (LEFT(payments.vouch_no, 2) = 'JV' AND LTRIM(RIGHT(payments.vouch_no, LEN(payments.vouch_no) - 2), '0') = LTRIM(RIGHT(jv.vouch_no, LEN(jv.vouch_no) - 2), '0'))
+                            )
+                        WHERE LEFT(jv.vouch_no, 2) = 'JV'
+                            AND jv.vouch_date <= @asOnDate
+                            AND CAST(REPLACE(jv.acc_code, '-', '') AS BIGINT) >= {fromAccountNumeric}
+                            AND CAST(REPLACE(jv.acc_code, '-', '') AS BIGINT) <= {uptoAccountNumeric}
+                            AND jv.cr_amount > 0
+                            AND jv.vouch_no NOT IN (
+                                SELECT DISTINCT vouch_no FROM view_gjournal 
+                                WHERE LEFT(vouch_no, 2) = 'BR'
+                            )
+                        GROUP BY jv.acc_code, c.acc_name, jv.vouch_no, jv.vouch_date
+                        HAVING SUM(jv.cr_amount) - ISNULL(SUM(payments.dr_amount), 0) > {minBal}
+
+                        ORDER BY AccCode, BillDate";
+
+                    var results = await _dataAccessService.ExecuteQueryAsync(user, summaryQuery, commandTimeout: 180);
+
+                    // Group by supplier and calculate aging buckets
+                    var supplierGroups = results
+                        .GroupBy(row => 
+                            row.ContainsKey("AccCode") ? row["AccCode"]?.ToString() ?? "" : ""
+                        )
+                        .Where(g => !string.IsNullOrEmpty(g.Key))
+                        .ToList();
+
+                    var summaryItems = new List<SupplierAgingSummaryItem>();
+                    decimal totalBalance = 0;
+                    decimal total1To30 = 0;
+                    decimal total31To60 = 0;
+                    decimal total61To90 = 0;
+                    decimal total91To120 = 0;
+                    decimal totalAbove120 = 0;
+
+                    foreach (var supplierGroup in supplierGroups)
+                    {
+                        var firstRow = supplierGroup.First();
+                        var accCode = firstRow.ContainsKey("AccCode") ? firstRow["AccCode"]?.ToString() ?? "" : "";
+                        var accName = firstRow.ContainsKey("AccName") ? firstRow["AccName"]?.ToString() ?? "" : "";
+                        
+                        decimal balance = 0;
+                        decimal days1To30 = 0;
+                        decimal days31To60 = 0;
+                        decimal days61To90 = 0;
+                        decimal days91To120 = 0;
+                        decimal above120 = 0;
+
+                        foreach (var row in supplierGroup)
+                        {
+                            var pending = row.ContainsKey("Pending") && decimal.TryParse(row["Pending"]?.ToString(), out var p) ? p : 0;
+                            var days = row.ContainsKey("Days") && int.TryParse(row["Days"]?.ToString(), out var d) ? d : 0;
+
+                            balance += pending;
+
+                            if (days <= 30)
+                                days1To30 += pending;
+                            else if (days <= 60)
+                                days31To60 += pending;
+                            else if (days <= 90)
+                                days61To90 += pending;
+                            else if (days <= 120)
+                                days91To120 += pending;
+                            else
+                                above120 += pending;
+                        }
+
+                        if (balance > minBal)
+                        {
+                            summaryItems.Add(new SupplierAgingSummaryItem
+                            {
+                                AccCode = accCode,
+                                AccName = accName,
+                                Balance = balance,
+                                Days1To30 = days1To30,
+                                Days31To60 = days31To60,
+                                Days61To90 = days61To90,
+                                Days91To120 = days91To120,
+                                Above120 = above120
+                            });
+
+                            totalBalance += balance;
+                            total1To30 += days1To30;
+                            total31To60 += days31To60;
+                            total61To90 += days61To90;
+                            total91To120 += days91To120;
+                            totalAbove120 += above120;
+                        }
+                    }
+
+                    stopwatch.Stop();
+
+                    return Ok(new SupplierAgingResponse
+                    {
+                        Success = true,
+                        Message = "Supplier Aging Summary Report retrieved successfully",
+                        ReportType = "Summary",
+                        SummaryData = summaryItems.OrderBy(x => x.AccCode).ToList(),
+                        AsOnDate = asOn,
+                        FromAccount = fromAcc,
+                        UptoAccount = uptoAcc,
+                        MinBalance = minBal,
+                        TotalBalance = totalBalance,
+                        TotalDays1To30 = total1To30,
+                        TotalDays31To60 = total31To60,
+                        TotalDays61To90 = total61To90,
+                        TotalDays91To120 = total91To120,
+                        TotalAbove120 = totalAbove120
+                    });
+                }
+                else
+                {
+                    // Query BR and JV vouchers (purchase bills) from view_gjournal and match payments
+                    var detailedQuery = $@"
+                        declare @asOnDate as date
+                        set @asOnDate = '{asOnDateString}'
+
+                        -- Get purchase bills from BR vouchers
+                        SELECT 
+                            br.acc_code as AccCode,
+                            ISNULL(c.acc_name, '') as AccName,
+                            br.vouch_no as BillNo,
+                            br.vouch_date as BillDate,
+                            NULL as DueDate,
+                            SUM(br.cr_amount) as BillAmount,
+                            ISNULL(SUM(payments.dr_amount), 0) as PaidAmount,
+                            SUM(br.cr_amount) - ISNULL(SUM(payments.dr_amount), 0) as Pending,
+                            DATEDIFF(day, br.vouch_date, @asOnDate) as Days
+                        FROM view_gjournal br
+                        LEFT JOIN customer c ON c.acc_code = br.acc_code
+                        LEFT JOIN (
+                            SELECT 
+                                acc_code,
+                                vouch_no,
+                                SUM(dr_amount) as dr_amount
+                            FROM view_gjournal
+                            WHERE vouch_date <= @asOnDate
+                                AND (LEFT(vouch_no, 2) = 'BP' OR LEFT(vouch_no, 2) = 'JV')
+                            GROUP BY acc_code, vouch_no
+                        ) payments ON payments.acc_code = br.acc_code
+                            AND (
+                                (LEFT(payments.vouch_no, 2) = 'BP' AND LTRIM(RIGHT(payments.vouch_no, LEN(payments.vouch_no) - 2), '0') = LTRIM(RIGHT(br.vouch_no, LEN(br.vouch_no) - 2), '0'))
+                                OR (LEFT(payments.vouch_no, 2) = 'JV' AND LTRIM(RIGHT(payments.vouch_no, LEN(payments.vouch_no) - 2), '0') = LTRIM(RIGHT(br.vouch_no, LEN(br.vouch_no) - 2), '0'))
+                            )
+                        WHERE LEFT(br.vouch_no, 2) = 'BR'
+                            AND br.vouch_date <= @asOnDate
+                            AND CAST(REPLACE(br.acc_code, '-', '') AS BIGINT) >= {fromAccountNumeric}
+                            AND CAST(REPLACE(br.acc_code, '-', '') AS BIGINT) <= {uptoAccountNumeric}
+                            AND br.cr_amount > 0
+                        GROUP BY br.acc_code, c.acc_name, br.vouch_no, br.vouch_date
+                        HAVING SUM(br.cr_amount) - ISNULL(SUM(payments.dr_amount), 0) > {minBal}
+
+                        UNION ALL
+
+                        -- Get purchase bills from JV vouchers (when cr_amount > 0)
+                        SELECT 
+                            jv.acc_code as AccCode,
+                            ISNULL(c.acc_name, '') as AccName,
+                            jv.vouch_no as BillNo,
+                            jv.vouch_date as BillDate,
+                            NULL as DueDate,
+                            SUM(jv.cr_amount) as BillAmount,
+                            ISNULL(SUM(payments.dr_amount), 0) as PaidAmount,
+                            SUM(jv.cr_amount) - ISNULL(SUM(payments.dr_amount), 0) as Pending,
+                            DATEDIFF(day, jv.vouch_date, @asOnDate) as Days
+                        FROM view_gjournal jv
+                        LEFT JOIN customer c ON c.acc_code = jv.acc_code
+                        LEFT JOIN (
+                            SELECT 
+                                acc_code,
+                                vouch_no,
+                                SUM(dr_amount) as dr_amount
+                            FROM view_gjournal
+                            WHERE vouch_date <= @asOnDate
+                                AND (LEFT(vouch_no, 2) = 'BP' OR LEFT(vouch_no, 2) = 'JV')
+                            GROUP BY acc_code, vouch_no
+                        ) payments ON payments.acc_code = jv.acc_code
+                            AND (
+                                (LEFT(payments.vouch_no, 2) = 'BP' AND LTRIM(RIGHT(payments.vouch_no, LEN(payments.vouch_no) - 2), '0') = LTRIM(RIGHT(jv.vouch_no, LEN(jv.vouch_no) - 2), '0'))
+                                OR (LEFT(payments.vouch_no, 2) = 'JV' AND LTRIM(RIGHT(payments.vouch_no, LEN(payments.vouch_no) - 2), '0') = LTRIM(RIGHT(jv.vouch_no, LEN(jv.vouch_no) - 2), '0'))
+                            )
+                        WHERE LEFT(jv.vouch_no, 2) = 'JV'
+                            AND jv.vouch_date <= @asOnDate
+                            AND CAST(REPLACE(jv.acc_code, '-', '') AS BIGINT) >= {fromAccountNumeric}
+                            AND CAST(REPLACE(jv.acc_code, '-', '') AS BIGINT) <= {uptoAccountNumeric}
+                            AND jv.cr_amount > 0
+                            AND jv.vouch_no NOT IN (
+                                SELECT DISTINCT vouch_no FROM view_gjournal 
+                                WHERE LEFT(vouch_no, 2) = 'BR'
+                            )
+                        GROUP BY jv.acc_code, c.acc_name, jv.vouch_no, jv.vouch_date
+                        HAVING SUM(jv.cr_amount) - ISNULL(SUM(payments.dr_amount), 0) > {minBal}
+
+                        ORDER BY AccCode, BillDate";
+
+                    // Also need to handle opening balances from view_gjournal directly
+                    var openingBalanceQuery = $@"
+                        declare @asOnDate as date
+                        set @asOnDate = '{asOnDateString}'
+
+                        SELECT 
+                            acc_code as AccCode,
+                            ISNULL((
+                                SELECT acc_name FROM customer WHERE acc_code = vg.acc_code
+                            ), '') as AccName,
+                            vouch_no as BillNo,
+                            vouch_date as BillDate,
+                            NULL as DueDate,
+                            CASE WHEN SUM(cr_amount) - SUM(dr_amount) > 0 
+                                THEN SUM(cr_amount) - SUM(dr_amount) 
+                                ELSE 0 END as BillAmount,
+                            0 as PaidAmount,
+                            CASE WHEN SUM(cr_amount) - SUM(dr_amount) > 0 
+                                THEN SUM(cr_amount) - SUM(dr_amount) 
+                                ELSE 0 END as Pending,
+                            DATEDIFF(day, vouch_date, @asOnDate) as Days
+                        FROM view_gjournal vg
+                        WHERE LEFT(vouch_no, 2) = 'OB'
+                            AND vouch_date <= @asOnDate
+                            AND CAST(REPLACE(acc_code, '-', '') AS BIGINT) >= {fromAccountNumeric}
+                            AND CAST(REPLACE(acc_code, '-', '') AS BIGINT) <= {uptoAccountNumeric}
+                            AND acc_code IN (
+                                SELECT DISTINCT acc_code FROM view_gjournal 
+                                WHERE (LEFT(vouch_no, 2) = 'BR' OR (LEFT(vouch_no, 2) = 'JV' AND cr_amount > 0))
+                                  AND CAST(REPLACE(acc_code, '-', '') AS BIGINT) >= {fromAccountNumeric}
+                                  AND CAST(REPLACE(acc_code, '-', '') AS BIGINT) <= {uptoAccountNumeric}
+                            )
+                        GROUP BY acc_code, vouch_no, vouch_date
+                        HAVING CASE WHEN SUM(cr_amount) - SUM(dr_amount) > 0 
+                            THEN SUM(cr_amount) - SUM(dr_amount) 
+                            ELSE 0 END > {minBal}
+                        ORDER BY acc_code, vouch_date";
+
+                    var invoiceResults = await _dataAccessService.ExecuteQueryAsync(user, detailedQuery, commandTimeout: 180);
+                    var openingBalanceResults = await _dataAccessService.ExecuteQueryAsync(user, openingBalanceQuery, commandTimeout: 180);
+
+                    // Combine and process results
+                    var allResults = new List<Dictionary<string, object>>();
+                    allResults.AddRange(invoiceResults);
+                    allResults.AddRange(openingBalanceResults);
+
+                    // Group by supplier and build detailed items
+                    var supplierGroups = allResults
+                        .GroupBy(row => 
+                            row.ContainsKey("AccCode") ? row["AccCode"]?.ToString() ?? "" : ""
+                        )
+                        .Where(g => !string.IsNullOrEmpty(g.Key))
+                        .OrderBy(g => g.Key)
+                        .ToList();
+
+                    var detailedItems = new List<SupplierAgingDetailedItem>();
+                    decimal totalPending = 0;
+
+                    foreach (var supplierGroup in supplierGroups)
+                    {
+                        var firstRow = supplierGroup.First();
+                        var accCode = firstRow.ContainsKey("AccCode") ? firstRow["AccCode"]?.ToString() ?? "" : "";
+                        var accName = firstRow.ContainsKey("AccName") ? firstRow["AccName"]?.ToString() ?? "" : "";
+                        
+                        decimal supplierBalance = 0;
+
+                        // Add supplier header
+                        detailedItems.Add(new SupplierAgingDetailedItem
+                        {
+                            AccCode = accCode,
+                            AccName = accName,
+                            IsSupplierHeader = true,
+                            SupplierBalance = null
+                        });
+
+                        // Add bill items
+                        foreach (var row in supplierGroup.OrderBy(r => 
+                            r.ContainsKey("BillDate") && DateTime.TryParse(r["BillDate"]?.ToString(), out var date) ? date : DateTime.MinValue))
+                        {
+                            var billNo = row.ContainsKey("BillNo") ? row["BillNo"]?.ToString() ?? "" : "";
+                            var billDate = row.ContainsKey("BillDate") && DateTime.TryParse(row["BillDate"]?.ToString(), out var date) ? date : DateTime.MinValue;
+                            var dueDate = row.ContainsKey("DueDate") && row["DueDate"] != null && DateTime.TryParse(row["DueDate"]?.ToString(), out var dDate) ? (DateTime?)dDate : null;
+                            var days = row.ContainsKey("Days") && int.TryParse(row["Days"]?.ToString(), out var d) ? d : 0;
+                            var billAmount = row.ContainsKey("BillAmount") && decimal.TryParse(row["BillAmount"]?.ToString(), out var ba) ? ba : 0;
+                            var pending = row.ContainsKey("Pending") && decimal.TryParse(row["Pending"]?.ToString(), out var p) ? p : 0;
+
+                            if (pending > minBal)
+                            {
+                                detailedItems.Add(new SupplierAgingDetailedItem
+                                {
+                                    AccCode = accCode,
+                                    AccName = accName,
+                                    BillNo = billNo,
+                                    BillDate = billDate,
+                                    DueDate = dueDate,
+                                    Days = days,
+                                    BillAmount = billAmount,
+                                    Pending = pending,
+                                    IsSupplierHeader = false,
+                                    IsTotalRow = false,
+                                    SupplierBalance = null
+                                });
+
+                                supplierBalance += pending;
+                                totalPending += pending;
+                            }
+                        }
+
+                        // Update supplier header with balance
+                        var supplierHeaderIndex = detailedItems.FindLastIndex(item => item.AccCode == accCode && item.IsSupplierHeader);
+                        if (supplierHeaderIndex >= 0)
+                        {
+                            detailedItems[supplierHeaderIndex].SupplierBalance = supplierBalance;
+                        }
+
+                        // Add supplier total row
+                        if (supplierBalance > minBal)
+                        {
+                            detailedItems.Add(new SupplierAgingDetailedItem
+                            {
+                                AccCode = accCode,
+                                AccName = accName,
+                                IsTotalRow = true,
+                                SupplierBalance = supplierBalance
+                            });
+                        }
+                    }
+
+                    stopwatch.Stop();
+
+                    return Ok(new SupplierAgingResponse
+                    {
+                        Success = true,
+                        Message = "Supplier Aging Detailed Report retrieved successfully",
+                        ReportType = "Detailed",
+                        DetailedData = detailedItems,
+                        AsOnDate = asOn,
+                        FromAccount = fromAcc,
+                        UptoAccount = uptoAcc,
+                        MinBalance = minBal,
+                        TotalPending = totalPending
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                stopwatch.Stop();
+                _logger.LogError(ex, "Error getting supplier aging report");
+                return StatusCode(500, new SupplierAgingResponse
+                {
+                    Success = false,
+                    Message = $"Internal server error: {ex.Message}"
+                });
+            }
+        }
+
+        private int GetCurrentUserId()
+        {
+            // Try different claim types for user ID
+            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier) ?? 
+                             User.FindFirst("http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier") ??
+                             User.FindFirst("nameidentifier");
+            
+            if (userIdClaim == null || !int.TryParse(userIdClaim.Value, out int userId))
+            {
+                _logger.LogWarning("User ID not found in token. Available claims: {Claims}", 
+                    string.Join(", ", User.Claims.Select(c => $"{c.Type}={c.Value}")));
+                throw new UnauthorizedAccessException("User ID not found in token");
+            }
+            
+            return userId;
+        }
+
+    }
+}

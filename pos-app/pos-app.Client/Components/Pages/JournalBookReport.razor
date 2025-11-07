@@ -1,0 +1,238 @@
+@page "/reports/journal-book"
+@using pos_app.Client.Services
+@using pos_app.Client.Models
+@using pos_app.Client.Components.Shared
+@inject DataService DataService
+@inject SessionService SessionService
+
+<PageTitle>Journal Book Report - POS System</PageTitle>
+
+<style>
+    .total-row {
+        background-color: #e9ecef !important;
+        font-weight: bold;
+    }
+    
+    .journal-table td {
+        vertical-align: top;
+    }
+    
+    .journal-table .text-end {
+        text-align: right;
+    }
+    
+    /* Ensure header text is black */
+    .journal-table thead th {
+        color: #000 !important;
+    }
+</style>
+
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+
+            <!-- Date Filter -->
+            <FilterCard Title="Report Filters" IconClass="fas fa-calendar-alt">
+                <div class="row">
+                    <DateInput Label="From Date:" Id="fromDate" @bind-Value="fromDate" MinDate="@minDate" />
+                    <DateInput Label="To Date:" Id="toDate" @bind-Value="toDate" />
+                    <div class="col-md-2 d-flex align-items-end">
+                        <ActionButton Text="Generate Report" IconClass="fas fa-search" OnClick="LoadJournalBook" IsLoading="@isLoading" IsDisabled="@isLoading" />
+                    </div>
+                    <div class="col-md-4 d-flex align-items-end">
+                        @if (journalBookData != null && journalBookData.Success)
+                        {
+                            <div class="text-muted">
+                                <small>Report generated on: @DateTime.Now.ToString("yyyy-MM-dd HH:mm")</small>
+                            </div>
+                        }
+                    </div>
+                </div>
+            </FilterCard>
+
+            <!-- Loading Indicator -->
+            @if (isLoading)
+            {
+                <LoadingSpinner Message="Generating journal book report..." />
+            }
+
+            <!-- Error Message -->
+            <ErrorAlert Message="@errorMessage" />
+
+            <!-- Report Data -->
+            @if (journalBookData != null && journalBookData.Success)
+            {
+                <ReportTable FilterableColumns="@(new List<int> { 0, 1, 2 })">
+                    <HeaderContent>
+                        <ReportTitleHeader Title="Journal Book Date To Date" IconClass="fas fa-book">
+                            <DateRangeContent>
+                                From: @journalBookData.FromDate.ToString("dd/MM/yyyy") 
+                                To Date: @journalBookData.ToDate.ToString("dd/MM/yyyy")
+                            </DateRangeContent>
+                        </ReportTitleHeader>
+                    </HeaderContent>
+                    
+                    <SummaryCards>
+                        <SummaryCard Title="Total Receipts" Value="@CurrencyHelper.FormatNumber(journalBookData.TotalReceipts)" BgColor="success" ColumnClass="col-md-4" />
+                        <SummaryCard Title="Total Payments" Value="@CurrencyHelper.FormatNumber(journalBookData.TotalPayments)" BgColor="danger" ColumnClass="col-md-4" />
+                        <SummaryCard Title="Total Entries" Value="@journalBookData.Data.Count().ToString()" BgColor="info" ColumnClass="col-md-4" />
+                    </SummaryCards>
+
+                    <BodyContent>
+                        <div class="table-responsive">
+                            <table class="table table-bordered journal-table">
+                                <thead>
+                                    <tr>
+                                        <th>Date</th>
+                                        <th>Particulars</th>
+                                        <th>Vr.No</th>
+                                        <th class="text-end">Receipts</th>
+                                        <th class="text-end">Payments</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @if (journalBookData.Data.Any())
+                                    {
+                                        @foreach (var item in journalBookData.Data)
+                                        {
+                                            <tr class="@(item.IsTotalRow ? "total-row" : "")">
+                                                <td>
+                                                    @if (item.Date.HasValue)
+                                                    {
+                                                        @item.Date.Value.ToString("dd/MM/yyyy")
+                                                    }
+                                                </td>
+                                                <td>
+                                                    @if (!item.IsTotalRow)
+                                                    {
+                                                        <div style="white-space: pre-line;">
+                                                            @if (!string.IsNullOrWhiteSpace(item.AccName))
+                                                            {
+                                                                <div class="fw-bold">@item.AccName.ToUpper()</div>
+                                                            }
+                                                            @if (!string.IsNullOrWhiteSpace(item.Description))
+                                                            {
+                                                                <div>@item.Description</div>
+                                                            }
+                                                        </div>
+                                                    }
+                                                </td>
+                                                <td>
+                                                    @if (item.IsTotalRow)
+                                                    {
+                                                        <strong>Total:</strong>
+                                                    }
+                                                    else if (!string.IsNullOrEmpty(item.VoucherNo))
+                                                    {
+                                                        @item.VoucherNo
+                                                    }
+                                                </td>
+                                                <td class="text-end">
+                                                    @if (item.Receipts > 0)
+                                                    {
+                                                        <span>@CurrencyHelper.FormatNumber(item.Receipts)</span>
+                                                    }
+                                                    else
+                                                    {
+                                                        <span>0.00</span>
+                                                    }
+                                                </td>
+                                                <td class="text-end">
+                                                    @if (item.Payments > 0)
+                                                    {
+                                                        <span>@CurrencyHelper.FormatNumber(item.Payments)</span>
+                                                    }
+                                                    else
+                                                    {
+                                                        <span>0.00</span>
+                                                    }
+                                                </td>
+                                            </tr>
+                                        }
+                                    }
+                                    else
+                                    {
+                                        <tr>
+                                            <td colspan="5" class="text-center text-muted">No journal entries found for the selected period.</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    </BodyContent>
+
+                    <FooterContent>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <strong>Total Receipts: @CurrencyHelper.FormatNumber(journalBookData.TotalReceipts)</strong>
+                            </div>
+                            <div class="col-md-6">
+                                <strong>Total Payments: @CurrencyHelper.FormatNumber(journalBookData.TotalPayments)</strong>
+                            </div>
+                        </div>
+                    </FooterContent>
+                </ReportTable>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    private DateTime fromDate;
+    private DateTime toDate = DateTime.Now;
+    private JournalBookResponse? journalBookData;
+    private bool isLoading = false;
+    private string errorMessage = string.Empty;
+    private DateTime? minDate;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Get minimum date from session
+        minDate = await SessionService.GetMinDateAsync();
+        
+        // Set fromDate to session start_date if available, otherwise use current month start
+        if (minDate.HasValue)
+        {
+            fromDate = minDate.Value;
+        }
+        else
+        {
+            fromDate = new DateTime(DateTime.Now.Year, DateTime.Now.Month, 1);
+        }
+        
+        toDate = DateTime.Now;
+    }
+
+    private async Task LoadJournalBook()
+    {
+        if (fromDate > toDate)
+        {
+            errorMessage = "From date cannot be greater than To date.";
+            return;
+        }
+
+        isLoading = true;
+        errorMessage = string.Empty;
+        journalBookData = null;
+
+        try
+        {
+            journalBookData = await DataService.GetJournalBookAsync(fromDate, toDate);
+            
+            if (!journalBookData.Success)
+            {
+                errorMessage = journalBookData.Message;
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"An error occurred while loading the journal book: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+}
+
+

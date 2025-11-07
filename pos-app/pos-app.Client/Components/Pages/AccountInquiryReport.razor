@@ -1,0 +1,264 @@
+@page "/reports/account-inquiry"
+@using pos_app.Client.Services
+@using pos_app.Client.Models
+@using pos_app.Client.Components.Shared
+@inject DataService DataService
+@inject SessionService SessionService
+@inject IJSRuntime JSRuntime
+
+<PageTitle>Account Inquiry Report - POS System</PageTitle>
+
+
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <!-- Filter Card -->
+            <FilterCard Title="Account Inquiry" IconClass="fas fa-search">
+                <div class="row g-3 mb-3">
+                    <SearchableAccountInput Label="A/C Code:" Id="accountCode" Value="@selectedAccountCode" ValueChanged="OnAccountChanged" />
+                    
+                    <DateInput Label="UpTo Date:" Id="uptoDate" @bind-Value="uptoDate" MinDate="@minDate" />
+                    
+                    <div class="col-md-3 d-flex align-items-end gap-2">
+                        <ActionButton Text="Calculate Total" IconClass="fas fa-calculator" OnClick="CalculateTotal" IsLoading="@isCalculatingTotal" IsDisabled="@isCalculateTotalDisabled" />
+                        <ActionButton Text="Show Ledger" IconClass="fas fa-book" OnClick="ShowLedger" IsLoading="@isLoadingLedger" IsDisabled="@isShowLedgerDisabled" />
+                    </div>
+                </div>
+
+                <div class="row g-3 mb-3">
+                    <div class="col-md-4">
+                        <AccountTotalDisplay Label="Total Debit" Value="@totalDebitValue" />
+                    </div>
+                    <div class="col-md-4">
+                        <AccountTotalDisplay Label="Total Credit" Value="@totalCreditValue" IsCredit="true" />
+                    </div>
+                    <div class="col-md-4">
+                        <AccountTotalDisplay Label="Balance" Value="@balanceValue" IsCredit="@isBalanceCredit" />
+                    </div>
+                </div>
+            </FilterCard>
+
+            <!-- Loading Indicator -->
+            @if (isCalculatingTotal || isLoadingLedger)
+            {
+                <LoadingSpinner Message="@(isCalculatingTotal ? "Calculating account totals..." : "Loading ledger report...")" />
+            }
+
+            <!-- Error Message -->
+            <ErrorAlert Message="@errorMessage" />
+
+            <!-- Ledger Report -->
+            @if (ledgerResponse != null && ledgerResponse.Success)
+            {
+                <ReportTable FilterableColumns="@(new List<int> { 0, 1, 2 })">
+                    <HeaderContent>
+                        <h4 class="mb-3"><strong><em>A/C Ledger DATE TO DATE</em></strong></h4>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <strong>From:</strong> @ledgerResponse.FromDate.ToString("dd/MM/yyyy") 
+                                <strong>To Date:</strong> @ledgerResponse.ToDate.ToString("dd/MM/yyyy")
+                            </div>
+                            <div class="col-md-6">
+                                <strong>A/C Code:</strong> @ledgerResponse.AccountCode
+                                <strong>Name:</strong> @ledgerResponse.AccountName
+                            </div>
+                        </div>
+                    </HeaderContent>
+                    
+                    <SummaryCards>
+                        <SummaryCard Title="Total Debit" Value="@CurrencyHelper.FormatNumber(ledgerResponse.TotalDebit)" BgColor="danger" />
+                        <SummaryCard Title="Total Credit" Value="@CurrencyHelper.FormatNumber(ledgerResponse.TotalCredit)" BgColor="success" />
+                        <SummaryCard Title="Balance" Value="@CurrencyHelper.FormatNumber(ledgerResponse.Data.LastOrDefault()?.Balance ?? 0)" BgColor="primary" />
+                        <SummaryCard Title="Total Entries" Value="@ledgerResponse.Data.Count().ToString()" BgColor="info" />
+                    </SummaryCards>
+
+                    <BodyContent>
+                        <table class="table table-bordered table-striped">
+                            <thead>
+                                <tr>
+                                    <th>Voucher No.</th>
+                                    <th>Date</th>
+                                    <th>Description</th>
+                                    <th>Debit</th>
+                                    <th>Credit</th>
+                                    <th>Balance</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @if (ledgerResponse.Data.Any())
+                                {
+                                    @foreach (var item in ledgerResponse.Data)
+                                    {
+                                        <tr>
+                                            <td>@item.VouchNo</td>
+                                            <td>@(item.VouchDate == DateTime.MinValue ? "" : item.VouchDate.ToString("dd/MM/yyyy"))</td>
+                                            <td>@item.Descript</td>
+                                            <td class="text-end">@(item.Debit > 0 ? CurrencyHelper.FormatNumber(item.Debit) : "0.00")</td>
+                                            <td class="text-end">@(item.Credit > 0 ? CurrencyHelper.FormatNumber(item.Credit) : "0.00")</td>
+                                            <td class="text-end">@CurrencyHelper.FormatNumber(item.Balance) @item.BalType</td>
+                                        </tr>
+                                    }
+                                }
+                                else
+                                {
+                                    <tr>
+                                        <td colspan="6" class="text-center text-muted">No transactions found for the selected period.</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </BodyContent>
+
+                    <FooterContent>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <strong>Total Debit: @CurrencyHelper.FormatNumber(ledgerResponse.TotalDebit)</strong>
+                            </div>
+                            <div class="col-md-6">
+                                <strong>Total Credit: @CurrencyHelper.FormatNumber(ledgerResponse.TotalCredit)</strong>
+                            </div>
+                        </div>
+                    </FooterContent>
+                </ReportTable>
+            }
+            else if (ledgerResponse != null && !ledgerResponse.Success)
+            {
+                <div class="alert alert-danger" role="alert">
+                    <i class="fas fa-exclamation-triangle"></i> @ledgerResponse.Message
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    private AccountPositionResponse? accountPosition;
+    private LedgerReportResponse? ledgerResponse;
+    private string selectedAccountCode = "";
+    private DateTime uptoDate = DateTime.Now;
+    private DateTime? minDate;
+    private bool isCalculatingTotal = false;
+    private bool isLoadingLedger = false;
+    private string errorMessage = string.Empty;
+    private List<ClientCustomer> allAccounts = new();
+
+    private bool isCalculateTotalDisabled => isCalculatingTotal || string.IsNullOrEmpty(selectedAccountCode);
+    private bool isShowLedgerDisabled => isLoadingLedger || string.IsNullOrEmpty(selectedAccountCode);
+    private decimal totalDebitValue => accountPosition?.TotalDebit ?? 0;
+    private decimal totalCreditValue => accountPosition?.TotalCredit ?? 0;
+    private decimal balanceValue => accountPosition?.Balance ?? 0;
+    private bool isBalanceCredit => accountPosition?.BalanceType == "Cr";
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Get minimum date from session
+        minDate = await SessionService.GetMinDateAsync();
+        
+        // Set uptoDate to current date
+        uptoDate = DateTime.Now;
+        
+        // Load accounts for account name lookup
+        await LoadAccounts();
+    }
+
+    private async Task LoadAccounts()
+    {
+        try
+        {
+            allAccounts = await DataService.GetCustomersAsync();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading accounts: {ex.Message}");
+        }
+    }
+
+    private async Task OnAccountChanged(string accountCode)
+    {
+        selectedAccountCode = accountCode;
+        
+        // Clear previous totals and ledger when account changes
+        accountPosition = null;
+        ledgerResponse = null;
+        
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task CalculateTotal()
+    {
+        if (string.IsNullOrEmpty(selectedAccountCode))
+        {
+            await JSRuntime.InvokeVoidAsync("alert", "Please select an account.");
+            return;
+        }
+
+        isCalculatingTotal = true;
+        errorMessage = string.Empty;
+        accountPosition = null;
+        StateHasChanged();
+
+        try
+        {
+            accountPosition = await DataService.GetAccountPositionAsync(selectedAccountCode, uptoDate);
+            
+            if (!accountPosition.Success)
+            {
+                errorMessage = accountPosition.Message;
+            }
+            else
+            {
+                errorMessage = string.Empty;
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"An error occurred while calculating totals: {ex.Message}";
+        }
+        finally
+        {
+            isCalculatingTotal = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task ShowLedger()
+    {
+        if (string.IsNullOrEmpty(selectedAccountCode))
+        {
+            await JSRuntime.InvokeVoidAsync("alert", "Please select an account.");
+            return;
+        }
+
+        isLoadingLedger = true;
+        errorMessage = string.Empty;
+        ledgerResponse = null;
+        StateHasChanged();
+
+        try
+        {
+            // Get session start_date for fromDate
+            var fromDate = minDate ?? new DateTime(DateTime.Now.Year, DateTime.Now.Month, 1);
+            
+            ledgerResponse = await DataService.GetAccountLedgerAsync(selectedAccountCode, fromDate, uptoDate);
+            
+            if (!ledgerResponse.Success)
+            {
+                errorMessage = ledgerResponse.Message;
+            }
+            else
+            {
+                errorMessage = string.Empty;
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"An error occurred while loading the ledger: {ex.Message}";
+        }
+        finally
+        {
+            isLoadingLedger = false;
+            StateHasChanged();
+        }
+    }
+}
+

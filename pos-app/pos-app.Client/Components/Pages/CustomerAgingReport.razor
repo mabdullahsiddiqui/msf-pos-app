@@ -1,0 +1,297 @@
+@page "/reports/customer-aging"
+@using pos_app.Client.Services
+@using pos_app.Client.Models
+@using pos_app.Client.Components.Shared
+@inject DataService DataService
+@inject SessionService SessionService
+
+<PageTitle>Customer Aging Report - POS System</PageTitle>
+
+<style>
+    .customer-header-row {
+        background-color: #e9ecef !important;
+        font-weight: bold;
+    }
+    
+    .total-row {
+        background-color: #f8f9fa !important;
+        font-weight: bold;
+    }
+    
+    .aging-table td {
+        vertical-align: middle;
+    }
+    
+    .aging-table .text-end {
+        text-align: right;
+    }
+</style>
+
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+
+            <!-- Report Filters -->
+            <FilterCard Title="Report Filters" IconClass="fas fa-filter">
+                <div class="row">
+                    <SearchableAccountInput Label="From A/C:" Id="fromAccount" @bind-Value="fromAccount" Placeholder="Search accounts..." ColumnClass="col-md-3" />
+                    <SearchableAccountInput Label="Upto A/C:" Id="uptoAccount" @bind-Value="uptoAccount" Placeholder="Search accounts..." ColumnClass="col-md-3" />
+                    <DateInput Label="As on Date:" Id="asOnDate" @bind-Value="asOnDate" MinDate="@minDate" />
+                    <div class="col-md-3 d-flex align-items-end gap-2">
+                        <ActionButton Text="Preview" IconClass="fas fa-search" OnClick="LoadCustomerAging" IsLoading="@isLoading" IsDisabled="@isLoading" />
+                        <ExportButton ShowButton="@(customerAgingData != null && customerAgingData.Success)" OnClick="ExportToExcel" AdditionalClass="ms-2" />
+                    </div>
+                </div>
+                
+                <!-- Report Type Selection -->
+                <ReportTypeSelector SelectedValue="@reportType" SelectedValueChanged="@((value) => reportType = value)" 
+                                     GroupName="customerAgingReportType" 
+                                     Options="@(new List<ReportTypeSelector.ReportTypeOption> { 
+                                         new ReportTypeSelector.ReportTypeOption { Value = "detailed", Label = "Detailed Report" },
+                                         new ReportTypeSelector.ReportTypeOption { Value = "summary", Label = "Summary" }
+                                     })" />
+            </FilterCard>
+
+            <!-- Loading Indicator -->
+            @if (isLoading)
+            {
+                <LoadingSpinner Message="Generating customer aging report..." />
+            }
+
+            <!-- Error Message -->
+            <ErrorAlert Message="@errorMessage" />
+
+            <!-- Detailed Report -->
+            @if (customerAgingData != null && customerAgingData.Success && customerAgingData.ReportType == "Detailed" && customerAgingData.DetailedData != null)
+            {
+                <ReportTable FilterableColumns="@(new List<int> { 0, 1, 2 })">
+                    <HeaderContent>
+                        <ReportTitleHeader Title="Customer Aging Report" IconClass="fas fa-users">
+                            <DateRangeContent>
+                                As on: @customerAgingData.AsOnDate.ToString("dd/MM/yyyy")
+                            </DateRangeContent>
+                        </ReportTitleHeader>
+                    </HeaderContent>
+                    
+                    <SummaryCards>
+                        <SummaryCard Title="Total Pending" Value="@CurrencyHelper.FormatNumber(customerAgingData.TotalPending)" BgColor="primary" ColumnClass="col-md-6" />
+                        <SummaryCard Title="Account Range" Value="@($"{customerAgingData.FromAccount} to {customerAgingData.UptoAccount}")" BgColor="info" ColumnClass="col-md-6" />
+                    </SummaryCards>
+
+                    <BodyContent>
+                        <div class="table-responsive">
+                            <table class="table table-bordered aging-table">
+                                <thead>
+                                    <tr>
+                                        <th>Bill No.</th>
+                                        <th>Bill date</th>
+                                        <th>Due Date</th>
+                                        <th>Days</th>
+                                        <th class="text-end">Bill Amount</th>
+                                        <th class="text-end">Pending</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var item in customerAgingData.DetailedData)
+                                    {
+                                        @if (item.IsCustomerHeader)
+                                        {
+                                            <tr class="customer-header-row">
+                                                <td colspan="5"><strong>@item.AccName (@item.AccCode)</strong></td>
+                                                <td class="text-end">
+                                                    @if (item.CustomerBalance.HasValue)
+                                                    {
+                                                        <strong>@CurrencyHelper.FormatNumber(item.CustomerBalance.Value)</strong>
+                                                    }
+                                                </td>
+                                            </tr>
+                                        }
+                                        else if (item.IsTotalRow)
+                                        {
+                                            <tr class="total-row">
+                                                <td colspan="5"><strong>Balance:</strong></td>
+                                                <td class="text-end">
+                                                    @if (item.CustomerBalance.HasValue)
+                                                    {
+                                                        <strong>@CurrencyHelper.FormatNumber(item.CustomerBalance.Value)</strong>
+                                                    }
+                                                </td>
+                                            </tr>
+                                        }
+                                        else
+                                        {
+                                            <tr>
+                                                <td>@item.BillNo</td>
+                                                <td>@item.BillDate.ToString("dd/MM/yyyy")</td>
+                                                <td>
+                                                    @if (item.DueDate.HasValue)
+                                                    {
+                                                        @item.DueDate.Value.ToString("dd/MM/yyyy")
+                                                    }
+                                                    else
+                                                    {
+                                                        <span>/</span>
+                                                    }
+                                                </td>
+                                                <td>@item.Days</td>
+                                                <td class="text-end">@CurrencyHelper.FormatNumber(item.BillAmount)</td>
+                                                <td class="text-end">@CurrencyHelper.FormatNumber(item.Pending)</td>
+                                            </tr>
+                                        }
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    </BodyContent>
+
+                    <FooterContent>
+                        <div class="row">
+                            <div class="col-12">
+                                <strong>Total Pending: @CurrencyHelper.FormatNumber(customerAgingData.TotalPending)</strong>
+                            </div>
+                        </div>
+                    </FooterContent>
+                </ReportTable>
+            }
+
+            <!-- Summary Report -->
+            @if (customerAgingData != null && customerAgingData.Success && customerAgingData.ReportType == "Summary" && customerAgingData.SummaryData != null)
+            {
+                <ReportTable FilterableColumns="@(new List<int> { 0 })">
+                    <HeaderContent>
+                        <ReportTitleHeader Title="Customer Aging Report" IconClass="fas fa-users">
+                            <DateRangeContent>
+                                As on: @customerAgingData.AsOnDate.ToString("dd/MM/yyyy")
+                            </DateRangeContent>
+                        </ReportTitleHeader>
+                    </HeaderContent>
+                    
+                    <SummaryCards>
+                        <SummaryCard Title="Total Balance" Value="@CurrencyHelper.FormatNumber(customerAgingData.TotalBalance)" BgColor="primary" ColumnClass="col-md-4" />
+                        <SummaryCard Title="Above 120 Days" Value="@CurrencyHelper.FormatNumber(customerAgingData.TotalAbove120)" BgColor="info" ColumnClass="col-md-4" />
+                        <SummaryCard Title="1-30 Days" Value="@CurrencyHelper.FormatNumber(customerAgingData.TotalDays1To30)" BgColor="success" ColumnClass="col-md-4" />
+                    </SummaryCards>
+
+                    <BodyContent>
+                        <div class="table-responsive">
+                            <table class="table table-bordered aging-table">
+                                <thead>
+                                    <tr>
+                                        <th>A/C Name</th>
+                                        <th class="text-end">Balance</th>
+                                        <th class="text-end">1 to 30</th>
+                                        <th class="text-end">31 to 60</th>
+                                        <th class="text-end">61 to 90</th>
+                                        <th class="text-end">91 to 120</th>
+                                        <th class="text-end">Above 120</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var item in customerAgingData.SummaryData)
+                                    {
+                                        <tr>
+                                            <td><strong>@item.AccName</strong><br /><small class="text-muted">@item.AccCode</small></td>
+                                            <td class="text-end">@CurrencyHelper.FormatNumber(item.Balance)</td>
+                                            <td class="text-end">@CurrencyHelper.FormatNumber(item.Days1To30)</td>
+                                            <td class="text-end">@CurrencyHelper.FormatNumber(item.Days31To60)</td>
+                                            <td class="text-end">@CurrencyHelper.FormatNumber(item.Days61To90)</td>
+                                            <td class="text-end">@CurrencyHelper.FormatNumber(item.Days91To120)</td>
+                                            <td class="text-end">@CurrencyHelper.FormatNumber(item.Above120)</td>
+                                        </tr>
+                                    }
+                                    @if (customerAgingData.SummaryData.Any())
+                                    {
+                                        <tr class="total-row">
+                                            <td><strong>Summary Total</strong></td>
+                                            <td class="text-end"><strong>@CurrencyHelper.FormatNumber(customerAgingData.TotalBalance)</strong></td>
+                                            <td class="text-end"><strong>@CurrencyHelper.FormatNumber(customerAgingData.TotalDays1To30)</strong></td>
+                                            <td class="text-end"><strong>@CurrencyHelper.FormatNumber(customerAgingData.TotalDays31To60)</strong></td>
+                                            <td class="text-end"><strong>@CurrencyHelper.FormatNumber(customerAgingData.TotalDays61To90)</strong></td>
+                                            <td class="text-end"><strong>@CurrencyHelper.FormatNumber(customerAgingData.TotalDays91To120)</strong></td>
+                                            <td class="text-end"><strong>@CurrencyHelper.FormatNumber(customerAgingData.TotalAbove120)</strong></td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    </BodyContent>
+
+                    <FooterContent>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <strong>Total Balance: @CurrencyHelper.FormatNumber(customerAgingData.TotalBalance)</strong>
+                            </div>
+                            <div class="col-md-6">
+                                <strong>Total Above 120 Days: @CurrencyHelper.FormatNumber(customerAgingData.TotalAbove120)</strong>
+                            </div>
+                        </div>
+                    </FooterContent>
+                </ReportTable>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    private string fromAccount = "";
+    private string uptoAccount = "";
+    private DateTime asOnDate;
+    private string reportType = "detailed";
+    private CustomerAgingResponse? customerAgingData;
+    private bool isLoading = false;
+    private string errorMessage = string.Empty;
+    private DateTime? minDate;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Get minimum date from session
+        minDate = await SessionService.GetMinDateAsync();
+        
+        // Set asOnDate to session start_date if available, otherwise use current date
+        if (minDate.HasValue)
+        {
+            asOnDate = minDate.Value;
+        }
+        else
+        {
+            asOnDate = DateTime.Now;
+        }
+    }
+
+    private async Task LoadCustomerAging()
+    {
+        isLoading = true;
+        errorMessage = string.Empty;
+        customerAgingData = null;
+
+        try
+        {
+            customerAgingData = await DataService.GetCustomerAgingAsync(
+                fromAccount: string.IsNullOrWhiteSpace(fromAccount) ? null : fromAccount,
+                uptoAccount: string.IsNullOrWhiteSpace(uptoAccount) ? null : uptoAccount,
+                asOnDate: asOnDate,
+                reportType: reportType
+            );
+            
+            if (!customerAgingData.Success)
+            {
+                errorMessage = customerAgingData.Message;
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"An error occurred while loading the customer aging report: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private void ExportToExcel()
+    {
+        // TODO: Implement Excel export functionality
+        // For now, this is a placeholder
+    }
+}
+

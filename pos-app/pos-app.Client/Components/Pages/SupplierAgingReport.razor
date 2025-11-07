@@ -1,0 +1,292 @@
+@page "/reports/supplier-aging"
+@using pos_app.Client.Services
+@using pos_app.Client.Models
+@using pos_app.Client.Components.Shared
+@inject DataService DataService
+@inject SessionService SessionService
+
+<PageTitle>Supplier Aging Report - POS System</PageTitle>
+
+<style>
+    .supplier-header-row {
+        background-color: #e9ecef !important;
+        font-weight: bold;
+    }
+    
+    .total-row {
+        background-color: #f8f9fa !important;
+        font-weight: bold;
+    }
+    
+    .aging-table td {
+        vertical-align: middle;
+    }
+    
+    .aging-table .text-end {
+        text-align: right;
+    }
+</style>
+
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+
+            <!-- Report Filters -->
+            <FilterCard Title="Supplier's Aging Report" IconClass="fas fa-filter">
+                <div class="row">
+                    <SearchableAccountInput Label="From A/C:" Id="fromAccount" @bind-Value="fromAccount" Placeholder="Search accounts..." ColumnClass="col-md-2" />
+                    <SearchableAccountInput Label="Upto A/C:" Id="uptoAccount" @bind-Value="uptoAccount" Placeholder="Search accounts..." ColumnClass="col-md-2" />
+                    <DateInput Label="As on Date:" Id="asOnDate" @bind-Value="asOnDate" ColumnClass="col-md-2" MinDate="@minDate" />
+                    <div class="col-md-2">
+                        <label for="minBalance" class="form-label">Only Show Balance Above:</label>
+                        <input type="number" id="minBalance" class="form-control" @bind="minBalance" step="0.01" />
+                    </div>
+                    <div class="col-md-4 d-flex align-items-end gap-2">
+                        <ActionButton Text="Preview" IconClass="fas fa-search" OnClick="LoadSupplierAging" IsLoading="@isLoading" IsDisabled="@isLoading" />
+                        <ExportButton ShowButton="@(supplierAgingData != null && supplierAgingData.Success)" OnClick="ExportToExcel" AdditionalClass="ms-2" />
+                    </div>
+                </div>
+                
+                <!-- Report Type Selection -->
+                <ReportTypeSelector SelectedValue="@reportType" SelectedValueChanged="@((value) => reportType = value)" 
+                                     GroupName="supplierAgingReportType" 
+                                     Options="@(new List<ReportTypeSelector.ReportTypeOption> { 
+                                         new ReportTypeSelector.ReportTypeOption { Value = "detailed", Label = "Detailed Report" },
+                                         new ReportTypeSelector.ReportTypeOption { Value = "summary", Label = "Summary" }
+                                     })" />
+            </FilterCard>
+
+            <!-- Loading Indicator -->
+            @if (isLoading)
+            {
+                <LoadingSpinner Message="Generating supplier aging report..." />
+            }
+
+            <!-- Error Message -->
+            <ErrorAlert Message="@errorMessage" />
+
+            <!-- Detailed Report -->
+            @if (supplierAgingData != null && supplierAgingData.Success && supplierAgingData.ReportType == "Detailed" && supplierAgingData.DetailedData != null)
+            {
+                <ReportTable FilterableColumns="@(new List<int> { 0, 1 })">
+                    <HeaderContent>
+                        <ReportTitleHeader Title="Supplier's Aging Report" IconClass="fas fa-truck">
+                            <DateRangeContent>
+                                As on: @supplierAgingData.AsOnDate.ToString("dd/MM/yyyy")
+                            </DateRangeContent>
+                        </ReportTitleHeader>
+                    </HeaderContent>
+                    
+                    <SummaryCards>
+                        <SummaryCard Title="Total Pending" Value="@CurrencyHelper.FormatNumber(supplierAgingData.TotalPending)" BgColor="primary" ColumnClass="col-md-6" />
+                        <SummaryCard Title="Account Range" Value="@($"{supplierAgingData.FromAccount} to {supplierAgingData.UptoAccount}")" BgColor="info" ColumnClass="col-md-6" />
+                    </SummaryCards>
+
+                    <BodyContent>
+                        <div class="table-responsive">
+                            <table class="table table-bordered aging-table">
+                                <thead>
+                                    <tr>
+                                        <th>Bill No.</th>
+                                        <th>Bill date</th>
+                                        <th>Days</th>
+                                        <th class="text-end">Bill Amount</th>
+                                        <th class="text-end">Pending</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var item in supplierAgingData.DetailedData)
+                                    {
+                                        @if (item.IsSupplierHeader)
+                                        {
+                                            <tr class="supplier-header-row">
+                                                <td colspan="4"><strong>@item.AccName (@item.AccCode)</strong></td>
+                                                <td class="text-end">
+                                                    @if (item.SupplierBalance.HasValue)
+                                                    {
+                                                        <strong>@CurrencyHelper.FormatNumber(item.SupplierBalance.Value)</strong>
+                                                    }
+                                                </td>
+                                            </tr>
+                                        }
+                                        else if (item.IsTotalRow)
+                                        {
+                                            <tr class="total-row">
+                                                <td colspan="4"><strong>Balance:</strong></td>
+                                                <td class="text-end">
+                                                    @if (item.SupplierBalance.HasValue)
+                                                    {
+                                                        <strong>@CurrencyHelper.FormatNumber(item.SupplierBalance.Value)</strong>
+                                                    }
+                                                </td>
+                                            </tr>
+                                        }
+                                        else
+                                        {
+                                            <tr>
+                                                <td>@item.BillNo</td>
+                                                <td>@item.BillDate.ToString("dd/MM/yyyy")</td>
+                                                <td>@item.Days</td>
+                                                <td class="text-end">@CurrencyHelper.FormatNumber(item.BillAmount)</td>
+                                                <td class="text-end">@CurrencyHelper.FormatNumber(item.Pending)</td>
+                                            </tr>
+                                        }
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    </BodyContent>
+
+                    <FooterContent>
+                        <div class="row">
+                            <div class="col-12">
+                                <strong>Total Pending: @CurrencyHelper.FormatNumber(supplierAgingData.TotalPending)</strong>
+                            </div>
+                        </div>
+                    </FooterContent>
+                </ReportTable>
+            }
+
+            <!-- Summary Report -->
+            @if (supplierAgingData != null && supplierAgingData.Success && supplierAgingData.ReportType == "Summary" && supplierAgingData.SummaryData != null)
+            {
+                <ReportTable FilterableColumns="@(new List<int> { 0 })">
+                    <HeaderContent>
+                        <ReportTitleHeader Title="Supplier Aging Report" IconClass="fas fa-truck">
+                            <DateRangeContent>
+                                As on: @supplierAgingData.AsOnDate.ToString("dd/MM/yyyy")
+                            </DateRangeContent>
+                        </ReportTitleHeader>
+                    </HeaderContent>
+                    
+                    <SummaryCards>
+                        <SummaryCard Title="Total Balance" Value="@CurrencyHelper.FormatNumber(supplierAgingData.TotalBalance)" BgColor="primary" ColumnClass="col-md-4" />
+                        <SummaryCard Title="Above 120 Days" Value="@CurrencyHelper.FormatNumber(supplierAgingData.TotalAbove120)" BgColor="info" ColumnClass="col-md-4" />
+                        <SummaryCard Title="1-30 Days" Value="@CurrencyHelper.FormatNumber(supplierAgingData.TotalDays1To30)" BgColor="success" ColumnClass="col-md-4" />
+                    </SummaryCards>
+
+                    <BodyContent>
+                        <div class="table-responsive">
+                            <table class="table table-bordered aging-table">
+                                <thead>
+                                    <tr>
+                                        <th>A/C Name</th>
+                                        <th class="text-end">Balance</th>
+                                        <th class="text-end">1 to 30</th>
+                                        <th class="text-end">31 to 60</th>
+                                        <th class="text-end">61 to 90</th>
+                                        <th class="text-end">91 to 120</th>
+                                        <th class="text-end">Above 120</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var item in supplierAgingData.SummaryData)
+                                    {
+                                        <tr>
+                                            <td><strong>@item.AccName</strong><br /><small class="text-muted">@item.AccCode</small></td>
+                                            <td class="text-end">@CurrencyHelper.FormatNumber(item.Balance)</td>
+                                            <td class="text-end">@CurrencyHelper.FormatNumber(item.Days1To30)</td>
+                                            <td class="text-end">@CurrencyHelper.FormatNumber(item.Days31To60)</td>
+                                            <td class="text-end">@CurrencyHelper.FormatNumber(item.Days61To90)</td>
+                                            <td class="text-end">@CurrencyHelper.FormatNumber(item.Days91To120)</td>
+                                            <td class="text-end">@CurrencyHelper.FormatNumber(item.Above120)</td>
+                                        </tr>
+                                    }
+                                    @if (supplierAgingData.SummaryData.Any())
+                                    {
+                                        <tr class="total-row">
+                                            <td><strong>Summary Total</strong></td>
+                                            <td class="text-end"><strong>@CurrencyHelper.FormatNumber(supplierAgingData.TotalBalance)</strong></td>
+                                            <td class="text-end"><strong>@CurrencyHelper.FormatNumber(supplierAgingData.TotalDays1To30)</strong></td>
+                                            <td class="text-end"><strong>@CurrencyHelper.FormatNumber(supplierAgingData.TotalDays31To60)</strong></td>
+                                            <td class="text-end"><strong>@CurrencyHelper.FormatNumber(supplierAgingData.TotalDays61To90)</strong></td>
+                                            <td class="text-end"><strong>@CurrencyHelper.FormatNumber(supplierAgingData.TotalDays91To120)</strong></td>
+                                            <td class="text-end"><strong>@CurrencyHelper.FormatNumber(supplierAgingData.TotalAbove120)</strong></td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    </BodyContent>
+
+                    <FooterContent>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <strong>Total Balance: @CurrencyHelper.FormatNumber(supplierAgingData.TotalBalance)</strong>
+                            </div>
+                            <div class="col-md-6">
+                                <strong>Total Above 120 Days: @CurrencyHelper.FormatNumber(supplierAgingData.TotalAbove120)</strong>
+                            </div>
+                        </div>
+                    </FooterContent>
+                </ReportTable>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    private string fromAccount = "";
+    private string uptoAccount = "";
+    private DateTime asOnDate;
+    private decimal minBalance = 1000.00m;
+    private string reportType = "detailed";
+    private SupplierAgingResponse? supplierAgingData;
+    private bool isLoading = false;
+    private string errorMessage = string.Empty;
+    private DateTime? minDate;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Get minimum date from session
+        minDate = await SessionService.GetMinDateAsync();
+        
+        // Set asOnDate to session start_date if available, otherwise use current date
+        if (minDate.HasValue)
+        {
+            asOnDate = minDate.Value;
+        }
+        else
+        {
+            asOnDate = DateTime.Now;
+        }
+    }
+
+    private async Task LoadSupplierAging()
+    {
+        isLoading = true;
+        errorMessage = string.Empty;
+        supplierAgingData = null;
+
+        try
+        {
+            supplierAgingData = await DataService.GetSupplierAgingAsync(
+                fromAccount: string.IsNullOrWhiteSpace(fromAccount) ? null : fromAccount,
+                uptoAccount: string.IsNullOrWhiteSpace(uptoAccount) ? null : uptoAccount,
+                asOnDate: asOnDate,
+                reportType: reportType,
+                minBalance: minBalance > 0 ? minBalance : null
+            );
+            
+            if (!supplierAgingData.Success)
+            {
+                errorMessage = supplierAgingData.Message;
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"An error occurred while loading the supplier aging report: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private void ExportToExcel()
+    {
+        // TODO: Implement Excel export functionality
+        // For now, this is a placeholder
+    }
+}
+

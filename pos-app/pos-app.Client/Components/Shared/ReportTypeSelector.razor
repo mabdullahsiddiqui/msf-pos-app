@@ -1,0 +1,43 @@
+@using Microsoft.AspNetCore.Components
+
+<div class="row mt-3">
+    <div class="col-md-12">
+        <label class="form-label">Report Type:</label>
+        @foreach (var option in Options)
+        {
+            <div class="form-check form-check-inline">
+                <input class="form-check-input" 
+                       type="radio" 
+                       name="@GroupName" 
+                       id="@($"{GroupName}_{option.Value}")" 
+                       value="@option.Value" 
+                       checked="@(SelectedValue == option.Value)" 
+                       @onchange="@(() => SelectedValueChanged.InvokeAsync(option.Value))" />
+                <label class="form-check-label" for="@($"{GroupName}_{option.Value}")">
+                    @option.Label
+                </label>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    // Currently selected value
+    [Parameter] public string SelectedValue { get; set; } = string.Empty;
+
+    // Event callback when selection changes
+    [Parameter] public EventCallback<string> SelectedValueChanged { get; set; }
+
+    // List of options to display. Each option should have Value and Label properties.
+    [Parameter] public List<ReportTypeOption> Options { get; set; } = new();
+
+    // Name attribute for the radio button group (for proper radio button behavior)
+    [Parameter] public string GroupName { get; set; } = "reportType";
+
+    // Option model for report type selector
+    public class ReportTypeOption
+    {
+        public string Value { get; set; } = string.Empty;
+        public string Label { get; set; } = string.Empty;
+    }
+}

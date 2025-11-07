@@ -1,0 +1,44 @@
+@using Microsoft.AspNetCore.Components
+
+<button class="@($"btn btn-{ButtonType} {AdditionalClass ?? ""}")" @onclick="HandleClick" disabled="@IsDisabled">
+    @if (IsLoading)
+    {
+        <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+    }
+    @if (!string.IsNullOrWhiteSpace(IconClass))
+    {
+        <i class="@IconClass me-1"></i>
+    }
+    @Text
+</button>
+
+@code {
+    // Button text to display
+    [Parameter] public string Text { get; set; } = string.Empty;
+
+    // Event callback when button is clicked
+    [Parameter] public EventCallback OnClick { get; set; }
+
+    // Whether the button is in loading state (shows spinner)
+    [Parameter] public bool IsLoading { get; set; } = false;
+
+    // Whether the button is disabled
+    [Parameter] public bool IsDisabled { get; set; } = false;
+
+    // CSS class for the icon (e.g., "fas fa-search", "bi bi-search")
+    [Parameter] public string? IconClass { get; set; }
+
+    // Button type/style. Options: "primary", "success", "danger", "info", "warning", "secondary"
+    [Parameter] public string ButtonType { get; set; } = "primary";
+
+    // Additional CSS classes to apply to the button
+    [Parameter] public string? AdditionalClass { get; set; }
+
+    private async Task HandleClick()
+    {
+        if (!IsDisabled && !IsLoading)
+        {
+            await OnClick.InvokeAsync();
+        }
+    }
+}

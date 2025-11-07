@@ -1,0 +1,364 @@
+@using Microsoft.AspNetCore.Components
+@using Microsoft.JSInterop
+@inject IJSRuntime JSRuntime
+
+<div class="@ColumnClass">
+    <label for="@Id" class="form-label">@Label</label>
+    <div class="position-relative">
+        <!-- Visible text input showing dd/mm/yyyy format (editable for manual entry) -->
+        <input type="text" 
+               id="@Id" 
+               class="form-control @(IsInvalid ? "is-invalid" : "")" 
+               placeholder="dd/mm/yyyy"
+               value="@displayValue"
+               maxlength="10"
+               @oninput="HandleTextInput"
+               @onblur="HandleTextBlur"
+               @onkeydown="HandleKeyDown"
+               style="padding-right: 40px;" />
+        
+        <!-- Hidden HTML5 date input for calendar picker -->
+        <input type="date" 
+               id="@($"{Id}_calendar")"
+               style="position: absolute; opacity: 0; width: 0; height: 0; pointer-events: none;"
+               value="@dateValueForCalendar"
+               min="@MinDateForCalendar"
+               max="@MaxDateForCalendar"
+               @onchange="HandleCalendarChange" />
+        
+        <!-- Calendar icon button to open calendar picker -->
+        <button type="button"
+                class="btn btn-sm position-absolute end-0 top-50 translate-middle-y me-2"
+                style="background: none; border: none; z-index: 10; cursor: pointer; padding: 0.25rem 0.5rem;"
+                @onclick="OpenCalendar"
+                @onclick:preventDefault="true"
+                @onclick:stopPropagation="true"
+                title="Open calendar">
+            <i class="fas fa-calendar-alt text-muted"></i>
+        </button>
+    </div>
+    @if (IsInvalid && !string.IsNullOrWhiteSpace(displayValue))
+    {
+        <div class="invalid-feedback">
+            @if (HasMinDateError)
+            {
+                <text>Date cannot be before @(MinDate?.ToString("dd/MM/yyyy") ?? "the minimum date")</text>
+            }
+            else if (HasMaxDateError)
+            {
+                <text>Date cannot be after @(MaxDate?.ToString("dd/MM/yyyy") ?? "the maximum date")</text>
+            }
+            else
+            {
+                <text>Please enter a valid date in dd/mm/yyyy format</text>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    // Label text for the date input
+    [Parameter] public string Label { get; set; } = string.Empty;
+
+    // Current date value
+    [Parameter] public DateTime Value { get; set; }
+
+    // Event callback when the date value changes
+    [Parameter] public EventCallback<DateTime> ValueChanged { get; set; }
+
+    // HTML id attribute for the input
+    [Parameter] public string Id { get; set; } = string.Empty;
+
+    // Bootstrap column class (e.g., "col-md-3", "col-md-4")
+    [Parameter] public string ColumnClass { get; set; } = "col-md-3";
+
+    // Minimum allowed date
+    [Parameter] public DateTime? MinDate { get; set; }
+
+    // Maximum allowed date
+    [Parameter] public DateTime? MaxDate { get; set; }
+
+    private string displayValue = "";
+    private string dateValueForCalendar = "";
+    private bool IsInvalid = false;
+    private bool HasMinDateError = false;
+    private bool HasMaxDateError = false;
+
+    private string MinDateForCalendar => MinDate.HasValue ? MinDate.Value.ToString("yyyy-MM-dd") : "";
+    private string MaxDateForCalendar => MaxDate.HasValue ? MaxDate.Value.ToString("yyyy-MM-dd") : "";
+
+    protected override void OnParametersSet()
+    {
+        UpdateDisplayValues();
+        base.OnParametersSet();
+    }
+
+    private void UpdateDisplayValues()
+    {
+        if (Value == default(DateTime))
+        {
+            displayValue = "";
+            dateValueForCalendar = "";
+        }
+        else
+        {
+            // Format for display: dd/MM/yyyy
+            displayValue = Value.ToString("dd/MM/yyyy");
+            // Format for calendar: yyyy-MM-dd
+            dateValueForCalendar = Value.ToString("yyyy-MM-dd");
+        }
+    }
+
+    private async Task HandleCalendarChange(ChangeEventArgs e)
+    {
+        var dateString = e.Value?.ToString();
+        
+        if (!string.IsNullOrWhiteSpace(dateString) && DateTime.TryParse(dateString, out DateTime date))
+        {
+            // Validate against MinDate and MaxDate
+            if (ValidateDateRange(date))
+            {
+                // Update display value to dd/mm/yyyy format
+                displayValue = date.ToString("dd/MM/yyyy");
+                dateValueForCalendar = dateString;
+                IsInvalid = false;
+                HasMinDateError = false;
+                HasMaxDateError = false;
+                
+                // Update the Value
+                CurrentValue = date;
+            }
+        }
+        else
+        {
+            displayValue = "";
+            dateValueForCalendar = "";
+            CurrentValue = default(DateTime);
+            IsInvalid = false;
+            HasMinDateError = false;
+            HasMaxDateError = false;
+        }
+        
+        StateHasChanged();
+    }
+
+    private async Task HandleTextInput(ChangeEventArgs e)
+    {
+        var inputValue = e.Value?.ToString() ?? "";
+        
+        // Auto-format the input
+        var formatted = AutoFormatDate(inputValue);
+        displayValue = formatted;
+        
+        // Try to parse and update calendar
+        var (isValid, date, error) = ParseDateFromInput(formatted);
+        
+        if (isValid && formatted.Length == 10 && formatted.Count(c => c == '/') == 2)
+        {
+            // Validate against MinDate and MaxDate
+            if (ValidateDateRange(date))
+            {
+                dateValueForCalendar = date.ToString("yyyy-MM-dd");
+                CurrentValue = date;
+                IsInvalid = false;
+                HasMinDateError = false;
+                HasMaxDateError = false;
+            }
+            else
+            {
+                IsInvalid = true;
+            }
+        }
+        else
+        {
+            IsInvalid = !isValid && !string.IsNullOrWhiteSpace(formatted);
+            HasMinDateError = false;
+            HasMaxDateError = false;
+        }
+        
+        StateHasChanged();
+    }
+
+    private async Task HandleTextBlur()
+    {
+        // On blur, validate and set the date
+        var (isValid, date, error) = ParseDateFromInput(displayValue);
+        
+        if (isValid && !string.IsNullOrWhiteSpace(displayValue))
+        {
+            // Validate against MinDate and MaxDate
+            if (ValidateDateRange(date))
+            {
+                dateValueForCalendar = date.ToString("yyyy-MM-dd");
+                CurrentValue = date;
+                IsInvalid = false;
+                HasMinDateError = false;
+                HasMaxDateError = false;
+                displayValue = date.ToString("dd/MM/yyyy");
+            }
+            else
+            {
+                IsInvalid = true;
+                // Keep the invalid date displayed so user can see what they entered
+            }
+        }
+        else if (!string.IsNullOrWhiteSpace(displayValue))
+        {
+            IsInvalid = true;
+            HasMinDateError = false;
+            HasMaxDateError = false;
+        }
+        else
+        {
+            // Empty value
+            dateValueForCalendar = "";
+            CurrentValue = default(DateTime);
+            IsInvalid = false;
+            HasMinDateError = false;
+            HasMaxDateError = false;
+            displayValue = "";
+        }
+        
+        StateHasChanged();
+    }
+
+    private async Task OpenCalendar()
+    {
+        try
+        {
+            // Try using showPicker() if available (modern browsers)
+            await JSRuntime.InvokeVoidAsync("eval", $@"
+                (function() {{
+                    const calendarInput = document.getElementById('{Id}_calendar');
+                    if (calendarInput) {{
+                        if (calendarInput.showPicker) {{
+                            calendarInput.showPicker();
+                        }} else {{
+                            calendarInput.click();
+                        }}
+                    }}
+                }})()
+            ");
+        }
+        catch
+        {
+            // Fallback: try to focus and click the calendar input
+            try
+            {
+                await JSRuntime.InvokeVoidAsync("eval", $"document.getElementById('{Id}_calendar')?.click()");
+            }
+            catch
+            {
+                // If JavaScript fails, just update the state
+                StateHasChanged();
+            }
+        }
+    }
+
+    private void HandleKeyDown(KeyboardEventArgs e)
+    {
+        // Allow all keys for manual text entry
+        // Auto-formatting will handle the formatting
+    }
+
+    // Parse dd/MM/yyyy string to DateTime
+    private (bool IsValid, DateTime Date, string Error) ParseDateFromInput(string input)
+    {
+        if (string.IsNullOrWhiteSpace(input))
+        {
+            return (true, default(DateTime), "");
+        }
+
+        input = input.Trim();
+
+        // Check if it matches dd/mm/yyyy pattern
+        if (System.Text.RegularExpressions.Regex.IsMatch(input, @"^\d{1,2}/\d{1,2}/\d{4}$"))
+        {
+            var parts = input.Split('/');
+            if (parts.Length == 3)
+            {
+                if (int.TryParse(parts[0], out int day) &&
+                    int.TryParse(parts[1], out int month) &&
+                    int.TryParse(parts[2], out int year))
+                {
+                    try
+                    {
+                        var date = new DateTime(year, month, day);
+                        return (true, date, "");
+                    }
+                    catch (ArgumentOutOfRangeException)
+                    {
+                        return (false, default(DateTime), "Invalid date");
+                    }
+                }
+            }
+        }
+
+        return (false, default(DateTime), "Invalid format. Use dd/mm/yyyy");
+    }
+
+    // Auto-format input as user types
+    private string AutoFormatDate(string input)
+    {
+        if (string.IsNullOrEmpty(input))
+            return "";
+
+        // Extract only digits
+        var digits = new string(input.Where(char.IsDigit).Take(8).ToArray());
+
+        if (string.IsNullOrEmpty(digits))
+            return "";
+
+        // Format as dd/mm/yyyy by inserting slashes at appropriate positions
+        var formatted = "";
+        if (digits.Length >= 1)
+        {
+            formatted = digits.Substring(0, Math.Min(2, digits.Length));
+            if (digits.Length > 2)
+            {
+                formatted += "/" + digits.Substring(2, Math.Min(2, digits.Length - 2));
+                if (digits.Length > 4)
+                {
+                    formatted += "/" + digits.Substring(4, Math.Min(4, digits.Length - 4));
+                }
+            }
+        }
+
+        return formatted;
+    }
+
+    private bool ValidateDateRange(DateTime date)
+    {
+        HasMinDateError = false;
+        HasMaxDateError = false;
+
+        if (MinDate.HasValue && date < MinDate.Value.Date)
+        {
+            HasMinDateError = true;
+            IsInvalid = true;
+            return false;
+        }
+
+        if (MaxDate.HasValue && date > MaxDate.Value.Date)
+        {
+            HasMaxDateError = true;
+            IsInvalid = true;
+            return false;
+        }
+
+        return true;
+    }
+
+    private DateTime CurrentValue
+    {
+        get => Value;
+        set
+        {
+            if (Value != value)
+            {
+                Value = value;
+                ValueChanged.InvokeAsync(value);
+            }
+        }
+    }
+}

@@ -1,0 +1,233 @@
+@page "/reports/three-trial-balance"
+@using pos_app.Client.Services
+@using pos_app.Client.Models
+@using pos_app.Client.Components.Shared
+@inject DataService DataService
+@inject SessionService SessionService
+
+<PageTitle>3 Trial Balance Report - POS System</PageTitle>
+
+<style>
+    /* Single border between Previous Balance and Current section - exclude footer */
+    thead th:nth-child(3),
+    tbody td:nth-child(3) {
+        border-right: 1px solid #6c757d !important;
+    }
+    
+    /* Remove border from footer row */
+    tfoot th:nth-child(3) {
+        border-right: none !important;
+    }
+</style>
+
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+
+            <!-- Filter Section -->
+            <FilterCard Title="Report Filters" IconClass="fas fa-calendar-alt">
+                <div class="row">
+                    <SearchableAccountInput Label="From Account:" Id="fromAccount" @bind-Value="fromAccount" Placeholder="Search accounts..." ColumnClass="col-md-3" />
+                    <SearchableAccountInput Label="Upto Account:" Id="uptoAccount" @bind-Value="uptoAccount" Placeholder="Search accounts..." ColumnClass="col-md-3" />
+                    <DateInput Label="From Date:" Id="fromDate" @bind-Value="fromDate" ColumnClass="col-md-2" MinDate="@minDate" />
+                    <DateInput Label="Upto Date:" Id="toDate" @bind-Value="toDate" ColumnClass="col-md-2" />
+                    <div class="col-md-2 d-flex align-items-end">
+                        <ActionButton Text="Generate Report" IconClass="bi bi-search" OnClick="LoadThreeTrialBalance" />
+                    </div>
+                </div>
+            </FilterCard>
+
+            <!-- Loading Indicator -->
+            @if (isLoading)
+            {
+                <LoadingSpinner Message="Generating 3 trial balance report..." />
+            }
+
+            <!-- Error Message -->
+            <ErrorAlert Message="@errorMessage" IconClass="bi bi-exclamation-triangle" />
+
+            <!-- 3 Trial Balance Table -->
+            @if (threeTrialBalanceData != null && threeTrialBalanceData.Success)
+            {
+                <ReportTable FilterableColumns="@(new List<int> { 0, 1 })">
+                    <HeaderContent>
+                        <ReportTitleHeader Title="3 Trial Balance Report" IconClass="bi bi-table">
+                            <DateRangeContent>
+                                From Date: @threeTrialBalanceData.FromDate.ToString("dd/MM/yyyy") 
+                                Upto Date: @threeTrialBalanceData.ToDate.ToString("dd/MM/yyyy")
+                            </DateRangeContent>
+                        </ReportTitleHeader>
+                    </HeaderContent>
+                    
+                    <SummaryCards>
+                        <SummaryCard Title="Total Previous Balance" Value="@CurrencyHelper.FormatNumber(threeTrialBalanceData.TotalPrevBal)" BgColor="info" />
+                        <SummaryCard Title="Total Current Debit" Value="@CurrencyHelper.FormatNumber(threeTrialBalanceData.TotalCurDebit)" BgColor="danger" />
+                        <SummaryCard Title="Total Current Credit" Value="@CurrencyHelper.FormatNumber(threeTrialBalanceData.TotalCurCredit)" BgColor="success" />
+                        <SummaryCard Title="Total Current Balance" Value="@CurrencyHelper.FormatNumber(threeTrialBalanceData.TotalCurBal)" BgColor="primary" />
+                    </SummaryCards>
+
+                    <BodyContent>
+                        <div class="table-responsive">
+                            <table class="table table-striped table-hover mb-0">
+                                <thead>
+                                    <tr>
+                                        <th>A/C Code</th>
+                                        <th>A/C Name</th>
+                                        <th class="text-end">Previous Balance</th>
+                                        <th class="text-end">Current Debit</th>
+                                        <th class="text-end">Current Credit</th>
+                                        <th class="text-end">Current Balance</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var item in threeTrialBalanceData.Data)
+                                    {
+                                        <tr>
+                                            <td><strong>@item.AccCode</strong></td>
+                                            <td>@item.AccName</td>
+                                            <td class="text-end">
+                                                @if (item.PrevBal > 0)
+                                                {
+                                                    <span class="@(item.BalType == "Dr." ? "text-danger fw-bold" : "text-success fw-bold")">
+                                                        @CurrencyHelper.FormatNumber(item.PrevBal) @(item.BalType == "Dr." ? "DR" : "CR")
+                                                    </span>
+                                                }
+                                                else
+                                                {
+                                                    <span class="text-muted">-</span>
+                                                }
+                                            </td>
+                                            <td class="text-end">
+                                                @if (item.CurDebit > 0)
+                                                {
+                                                    <span class="text-danger fw-bold">@CurrencyHelper.FormatNumber(item.CurDebit)</span>
+                                                }
+                                                else
+                                                {
+                                                    <span class="text-muted">-</span>
+                                                }
+                                            </td>
+                                            <td class="text-end">
+                                                @if (item.CurCredit > 0)
+                                                {
+                                                    <span class="text-success fw-bold">@CurrencyHelper.FormatNumber(item.CurCredit)</span>
+                                                }
+                                                else
+                                                {
+                                                    <span class="text-muted">-</span>
+                                                }
+                                            </td>
+                                            <td class="text-end">
+                                                @if (item.CurBal > 0)
+                                                {
+                                                    <span class="@(item.CurBalType == "Dr." ? "text-danger fw-bold" : "text-success fw-bold")">
+                                                        @CurrencyHelper.FormatNumber(item.CurBal) @(item.CurBalType == "Dr." ? "DR" : "CR")
+                                                    </span>
+                                                }
+                                                else
+                                                {
+                                                    <span class="text-muted">-</span>
+                                                }
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                                <tfoot class="table-secondary">
+                                    <tr>
+                                        <th colspan="2"><strong>TOTAL</strong></th>
+                                        <th class="text-end">
+                                            <strong>@CurrencyHelper.FormatNumber(threeTrialBalanceData.TotalPrevBal)</strong>
+                                        </th>
+                                        <th class="text-end">
+                                            <strong class="text-danger">@CurrencyHelper.FormatNumber(threeTrialBalanceData.TotalCurDebit)</strong>
+                                        </th>
+                                        <th class="text-end">
+                                            <strong class="text-success">@CurrencyHelper.FormatNumber(threeTrialBalanceData.TotalCurCredit)</strong>
+                                        </th>
+                                        <th class="text-end">
+                                            <strong>@CurrencyHelper.FormatNumber(threeTrialBalanceData.TotalCurBal)</strong>
+                                        </th>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
+                    </BodyContent>
+
+                    <FooterContent>
+                        <div class="row">
+                            <div class="col-md-3">
+                                <strong>Total Previous Balance: @CurrencyHelper.FormatNumber(threeTrialBalanceData.TotalPrevBal)</strong>
+                            </div>
+                            <div class="col-md-3">
+                                <strong>Total Current Debit: @CurrencyHelper.FormatNumber(threeTrialBalanceData.TotalCurDebit)</strong>
+                            </div>
+                            <div class="col-md-3">
+                                <strong>Total Current Credit: @CurrencyHelper.FormatNumber(threeTrialBalanceData.TotalCurCredit)</strong>
+                            </div>
+                            <div class="col-md-3">
+                                <strong>Total Current Balance: @CurrencyHelper.FormatNumber(threeTrialBalanceData.TotalCurBal)</strong>
+                            </div>
+                        </div>
+                    </FooterContent>
+                </ReportTable>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    private ThreeTrialBalanceResponse? threeTrialBalanceData;
+    private bool isLoading = false;
+    private string errorMessage = string.Empty;
+    
+    // Filter parameters
+    private DateTime fromDate;
+    private DateTime toDate = DateTime.Now;
+    private string fromAccount = "";
+    private string uptoAccount = "";
+    private DateTime? minDate;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Get minimum date from session
+        minDate = await SessionService.GetMinDateAsync();
+        
+        // Set fromDate to session start_date if available, otherwise use current month start
+        if (minDate.HasValue)
+        {
+            fromDate = minDate.Value;
+        }
+        else
+        {
+            fromDate = new DateTime(DateTime.Now.Year, DateTime.Now.Month, 1);
+        }
+        
+        toDate = DateTime.Now;
+    }
+
+    private async Task LoadThreeTrialBalance()
+    {
+        isLoading = true;
+        errorMessage = string.Empty;
+        StateHasChanged();
+
+        try
+        {
+            threeTrialBalanceData = await DataService.GetThreeTrialBalanceAsync(fromDate, toDate, fromAccount, uptoAccount);
+            
+            if (!threeTrialBalanceData.Success)
+            {
+                errorMessage = threeTrialBalanceData.Message;
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error loading 3 trial balance: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+}

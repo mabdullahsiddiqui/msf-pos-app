@@ -1,0 +1,605 @@
+@page "/superadmin/dashboard"
+@rendermode InteractiveWebAssembly
+@layout pos_app.Client.Components.Layout.SuperAdminMainLayout
+@using pos_app.Client.Models
+@using pos_app.Client.Services
+@inject SuperAdminService SuperAdminService
+@inject NavigationManager Navigation
+@inject AuthenticationStateService AuthState
+
+<PageTitle>Dashboard</PageTitle>
+
+<div class="container-fluid">
+    <!-- Alert Notification -->
+    @if (showAlert)
+    {
+        <div class="alert alert-@alertType alert-dismissible fade show" role="alert" style="position: fixed; top: 20px; right: 20px; z-index: 9999; min-width: 300px;">
+            <strong>@alertTitle</strong><br>
+            @((MarkupString)alertMessage)
+            <button type="button" class="btn-close" @onclick="HideAlert"></button>
+        </div>
+    }
+
+    <div class="row">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h2><i class="fas fa-tachometer-alt"></i> Super Admin Dashboard</h2>
+                <div>
+                    <button class="btn btn-success me-2" @onclick="ShowCreateUserModal">
+                        <i class="fas fa-user-plus"></i> Create User
+                    </button>
+                    <button class="btn btn-outline-secondary" @onclick="RefreshUsers">
+                        <i class="fas fa-sync-alt"></i> Refresh
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    @if (isLoading)
+    {
+        <div class="text-center">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="row">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h5><i class="fas fa-users"></i> Users Management</h5>
+                    </div>
+                    <div class="card-body">
+                        @if (users.Any())
+                        {
+                            <div class="table-responsive">
+                                <table class="table table-striped table-hover">
+                                    <thead style="background-color: #2F4254 !important; color: white !important;">
+                                        <tr>
+                                            <th class="text-white fw-bold" style="color: white !important; background-color: #2F4254 !important;">ID</th>
+                                            <th class="text-white fw-bold" style="color: white !important; background-color: #2F4254 !important;">Company</th>
+                                            <th class="text-white fw-bold" style="color: white !important; background-color: #2F4254 !important;">Contact Person</th>
+                                            <th class="text-white fw-bold" style="color: white !important; background-color: #2F4254 !important;">Email</th>
+                                            <th class="text-white fw-bold" style="color: white !important; background-color: #2F4254 !important;">Database</th>
+                                            <th class="text-white fw-bold" style="color: white !important; background-color: #2F4254 !important;">Server</th>
+                                            <th class="text-white fw-bold" style="color: white !important; background-color: #2F4254 !important;">Created</th>
+                                            <th class="text-white fw-bold" style="color: white !important; background-color: #2F4254 !important;">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var user in users)
+                                        {
+                                            <tr>
+                                                <td>@user.Id</td>
+                                                <td>@user.CompanyName</td>
+                                                <td>@user.ContactPerson</td>
+                                                <td>@user.Email</td>
+                                                <td>@user.DatabaseName</td>
+                                                <td>@user.ServerName</td>
+                                                <td>@user.CreatedAt.ToString("yyyy-MM-dd")</td>
+                                                <td>
+                                                    <button class="btn btn-sm btn-info me-1" @onclick="() => TestConnection(user.Id)" disabled="@testingConnections.Contains(user.Id)">
+                                                        @if (testingConnections.Contains(user.Id))
+                                                        {
+                                                            <span class="spinner-border spinner-border-sm me-1" role="status"></span>
+                                                        }
+                                                        else
+                                                        {
+                                                            <i class="fas fa-plug me-1"></i>
+                                                        }
+                                                        Test DB
+                                                    </button>
+                                                    <button class="btn btn-sm btn-warning me-1" @onclick="() => ShowEditUserModal(user)">
+                                                        <i class="fas fa-edit me-1"></i>
+                                                        Edit
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="text-center text-muted">
+                                <i class="fas fa-users fa-3x mb-3"></i>
+                                <p>No users found. Create your first user to get started.</p>
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+<!-- Create User Modal -->
+@if (showCreateUserModal)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="fas fa-user-plus"></i> Create New User</h5>
+                    <button type="button" class="btn-close" @onclick="CloseCreateUserModal"></button>
+                </div>
+                <div class="modal-body">
+                    <EditForm Model="newUserRequest" OnValidSubmit="HandleCreateUser" FormName="superAdminCreateUserForm">
+                        <DataAnnotationsValidator />
+                        
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label class="form-label">Company Name *</label>
+                                    <InputText class="form-control" @bind-Value="newUserRequest.CompanyName" />
+                                    <ValidationMessage For="@(() => newUserRequest.CompanyName)" />
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label class="form-label">Contact Person *</label>
+                                    <InputText class="form-control" @bind-Value="newUserRequest.ContactPerson" />
+                                    <ValidationMessage For="@(() => newUserRequest.ContactPerson)" />
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label class="form-label">Email *</label>
+                                    <InputText class="form-control" @bind-Value="newUserRequest.Email" />
+                                    <ValidationMessage For="@(() => newUserRequest.Email)" />
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label class="form-label">Cell Number</label>
+                                    <InputText class="form-control" @bind-Value="newUserRequest.CellNo" />
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label class="form-label">Password *</label>
+                                    <InputText type="password" class="form-control" @bind-Value="newUserRequest.Password" />
+                                    <ValidationMessage For="@(() => newUserRequest.Password)" />
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label class="form-label">Connection Name</label>
+                                    <InputText class="form-control" @bind-Value="newUserRequest.ConnectionName" />
+                                </div>
+                            </div>
+                        </div>
+
+                        <hr>
+                        <h6><i class="fas fa-database"></i> Database Connection</h6>
+                        
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label class="form-label">SQL Server Name *</label>
+                                    <InputText class="form-control" @bind-Value="newUserRequest.ServerName" placeholder="your-server.database.windows.net" />
+                                    <small class="form-text text-muted">Format: your-server.database.windows.net</small>
+                                    <ValidationMessage For="@(() => newUserRequest.ServerName)" />
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label class="form-label">Database Name *</label>
+                                    <InputText class="form-control" @bind-Value="newUserRequest.DatabaseName" placeholder="ClientDatabaseName" />
+                                    <small class="form-text text-muted">Unique database name for this client</small>
+                                    <ValidationMessage For="@(() => newUserRequest.DatabaseName)" />
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label class="form-label">SQL Username *</label>
+                                    <InputText class="form-control" @bind-Value="newUserRequest.Username" placeholder="sqladmin" />
+                                    <small class="form-text text-muted">SQL Database username</small>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label class="form-label">SQL Password *</label>
+                                    <InputText type="password" class="form-control" @bind-Value="newUserRequest.DatabasePassword" placeholder="Strong password" />
+                                    <small class="form-text text-muted">SQL Database password</small>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label class="form-label">Port</label>
+                                    <InputNumber class="form-control" @bind-Value="newUserRequest.Port" placeholder="1433" />
+                                    <small class="form-text text-muted">Default: 1433 for SQL Server</small>
+                                </div>
+                            </div>
+                        </div>
+
+                        @if (!string.IsNullOrEmpty(createUserMessage))
+                        {
+                            <div class="alert @(createUserSuccess ? "alert-success" : "alert-danger")" role="alert">
+                                @createUserMessage
+                            </div>
+                        }
+
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" @onclick="CloseCreateUserModal">Cancel</button>
+                            <button type="submit" class="btn btn-primary" disabled="@isCreatingUser">
+                                @if (isCreatingUser)
+                                {
+                                    <span class="spinner-border spinner-border-sm me-2" role="status"></span>
+                                }
+                                Create User
+                            </button>
+                        </div>
+                    </EditForm>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Edit User Modal -->
+@if (showEditUserModal)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="fas fa-user-edit"></i> Edit User</h5>
+                    <button type="button" class="btn-close" @onclick="CloseEditUserModal"></button>
+                </div>
+                <div class="modal-body">
+                    <EditForm Model="editUserRequest" OnValidSubmit="HandleEditUser" FormName="superAdminEditUserForm">
+                        <DataAnnotationsValidator />
+                        
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label class="form-label">Company Name *</label>
+                                    <InputText class="form-control" @bind-Value="editUserRequest.CompanyName" />
+                                    <ValidationMessage For="@(() => editUserRequest.CompanyName)" />
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label class="form-label">Contact Person *</label>
+                                    <InputText class="form-control" @bind-Value="editUserRequest.ContactPerson" />
+                                    <ValidationMessage For="@(() => editUserRequest.ContactPerson)" />
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label class="form-label">Email *</label>
+                                    <InputText class="form-control" @bind-Value="editUserRequest.Email" />
+                                    <ValidationMessage For="@(() => editUserRequest.Email)" />
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label class="form-label">Cell Number</label>
+                                    <InputText class="form-control" @bind-Value="editUserRequest.CellNo" />
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label class="form-label">Password</label>
+                                    <InputText type="password" class="form-control" @bind-Value="editUserRequest.Password" placeholder="Leave blank to keep current password" />
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label class="form-label">Connection Name</label>
+                                    <InputText class="form-control" @bind-Value="editUserRequest.ConnectionName" />
+                                </div>
+                            </div>
+                        </div>
+
+                        <hr>
+                        <h6><i class="fas fa-database"></i> Database Connection</h6>
+                        
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label class="form-label">SQL Server Name *</label>
+                                    <InputText class="form-control" @bind-Value="editUserRequest.ServerName" placeholder="your-server.database.windows.net" />
+                                    <small class="form-text text-muted">Format: your-server.database.windows.net</small>
+                                    <ValidationMessage For="@(() => editUserRequest.ServerName)" />
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label class="form-label">Database Name *</label>
+                                    <InputText class="form-control" @bind-Value="editUserRequest.DatabaseName" placeholder="ClientDatabaseName" />
+                                    <small class="form-text text-muted">Unique database name for this client</small>
+                                    <ValidationMessage For="@(() => editUserRequest.DatabaseName)" />
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label class="form-label">SQL Username *</label>
+                                    <InputText class="form-control" @bind-Value="editUserRequest.Username" placeholder="sqladmin" />
+                                    <small class="form-text text-muted">SQL Database username</small>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label class="form-label">SQL Password *</label>
+                                    <InputText type="password" class="form-control" @bind-Value="editUserRequest.DatabasePassword" placeholder="Strong password" />
+                                    <small class="form-text text-muted">SQL Database password</small>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label class="form-label">Port</label>
+                                    <InputNumber class="form-control" @bind-Value="editUserRequest.Port" placeholder="1433" />
+                                    <small class="form-text text-muted">Default: 1433 for SQL Server</small>
+                                </div>
+                            </div>
+                        </div>
+
+                        @if (!string.IsNullOrEmpty(editUserMessage))
+                        {
+                            <div class="alert @(editUserSuccess ? "alert-success" : "alert-danger")" role="alert">
+                                @editUserMessage
+                            </div>
+                        }
+
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" @onclick="CloseEditUserModal">Cancel</button>
+                            <button type="submit" class="btn btn-primary" disabled="@isEditingUser">
+                                @if (isEditingUser)
+                                {
+                                    <span class="spinner-border spinner-border-sm me-2" role="status"></span>
+                                }
+                                Update User
+                            </button>
+                        </div>
+                    </EditForm>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<UserInfo> users = new();
+    private bool isLoading = true;
+    private bool showCreateUserModal = false;
+    private CreateUserRequest newUserRequest = new();
+    private bool isCreatingUser = false;
+    private string createUserMessage = string.Empty;
+    private bool createUserSuccess = false;
+    
+    // Edit user variables
+    private bool showEditUserModal = false;
+    private EditUserRequest editUserRequest = new();
+    private bool isEditingUser = false;
+    private string editUserMessage = string.Empty;
+    private bool editUserSuccess = false;
+    private UserInfo? selectedUserForEdit;
+    
+    // Alert system
+    private bool showAlert = false;
+    private string alertType = string.Empty;
+    private string alertMessage = string.Empty;
+    private string alertTitle = string.Empty;
+    
+    // Test connection loading states
+    private HashSet<int> testingConnections = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadUsers();
+    }
+
+    private async Task LoadUsers()
+    {
+        isLoading = true;
+        var response = await SuperAdminService.GetUsersAsync();
+        
+        if (response.Success)
+        {
+            users = response.Users;
+        }
+        
+        isLoading = false;
+    }
+
+    private async Task RefreshUsers()
+    {
+        await LoadUsers();
+    }
+
+    private void ShowCreateUserModal()
+    {
+        newUserRequest = new CreateUserRequest
+        {
+            Port = 1433 // Default Azure SQL port
+        };
+        createUserMessage = string.Empty;
+        showCreateUserModal = true;
+    }
+
+    private void CloseCreateUserModal()
+    {
+        showCreateUserModal = false;
+        createUserMessage = string.Empty;
+    }
+
+    private void ShowEditUserModal(UserInfo user)
+    {
+        selectedUserForEdit = user;
+        editUserRequest = new EditUserRequest
+        {
+            Id = user.Id,
+            CompanyName = user.CompanyName,
+            ContactPerson = user.ContactPerson,
+            Email = user.Email,
+            CellNo = user.CellNo,
+            Password = string.Empty, // Leave blank for optional password change
+            ConnectionName = user.ConnectionName,
+            ServerName = user.ServerName,
+            DatabaseName = user.DatabaseName,
+            Username = user.Username,
+            DatabasePassword = user.DatabasePassword, // Store original password
+            Port = user.Port // Use actual port from user data
+        };
+        editUserMessage = string.Empty;
+        showEditUserModal = true;
+    }
+
+    private void CloseEditUserModal()
+    {
+        showEditUserModal = false;
+        editUserMessage = string.Empty;
+        selectedUserForEdit = null;
+    }
+
+    private async Task HandleCreateUser()
+    {
+        isCreatingUser = true;
+        createUserMessage = string.Empty;
+
+        try
+        {
+            var response = await SuperAdminService.CreateUserAsync(newUserRequest);
+            createUserSuccess = response.Success;
+            createUserMessage = response.Message;
+
+            if (response.Success)
+            {
+                await LoadUsers();
+                CloseCreateUserModal();
+            }
+        }
+        catch (Exception ex)
+        {
+            createUserSuccess = false;
+            createUserMessage = $"Error: {ex.Message}";
+        }
+        finally
+        {
+            isCreatingUser = false;
+        }
+    }
+
+    private async Task HandleEditUser()
+    {
+        isEditingUser = true;
+        editUserMessage = string.Empty;
+
+        try
+        {
+            var response = await SuperAdminService.UpdateUserAsync(editUserRequest);
+            editUserSuccess = response.Success;
+            editUserMessage = response.Message;
+
+            if (response.Success)
+            {
+                await LoadUsers();
+                CloseEditUserModal();
+                ShowAlert("success", "User updated successfully!", "User Updated");
+            }
+        }
+        catch (Exception ex)
+        {
+            editUserSuccess = false;
+            editUserMessage = $"Error: {ex.Message}";
+        }
+        finally
+        {
+            isEditingUser = false;
+        }
+    }
+
+    private async Task TestConnection(int userId)
+    {
+        testingConnections.Add(userId);
+        StateHasChanged();
+        
+        try
+        {
+            var response = await SuperAdminService.TestUserConnectionAsync(userId);
+            
+            if (response.Success)
+            {
+                var details = response.ConnectionDetails;
+                var detailsText = details != null 
+                    ? $"<br><strong>Server:</strong> {details.ServerName}<br><strong>Database:</strong> {details.DatabaseName}<br><strong>Type:</strong> {details.DatabaseType}" +
+                      (details.LastConnectedAt != null ? $"<br><strong>Last Connected:</strong> {details.LastConnectedAt}" : "")
+                    : "";
+                
+                ShowAlert("success", $"✅ Database connection successful!{detailsText}", "Connection Test");
+            }
+            else
+            {
+                ShowAlert("danger", $"❌ Database connection failed: {response.Message}", "Connection Test");
+            }
+        }
+        catch (Exception ex)
+        {
+            ShowAlert("danger", $"❌ Error testing connection: {ex.Message}", "Connection Test");
+        }
+        finally
+        {
+            testingConnections.Remove(userId);
+            StateHasChanged();
+        }
+    }
+
+
+    private void ShowAlert(string type, string message, string title = "Notification")
+    {
+        alertType = type;
+        alertMessage = message;
+        alertTitle = title;
+        showAlert = true;
+        
+        // Auto-hide after 5 seconds
+        Task.Delay(5000).ContinueWith(_ => {
+            showAlert = false;
+            InvokeAsync(StateHasChanged);
+        });
+    }
+
+    private void HideAlert()
+    {
+        showAlert = false;
+    }
+
+    private async Task Logout()
+    {
+        await AuthState.Logout();
+        // Small delay to ensure state is cleared
+        await Task.Delay(100);
+        // Use forceLoad to prevent navigation conflicts
+        Navigation.NavigateTo("/superadmin/login", forceLoad: true);
+    }
+}

@@ -1,0 +1,195 @@
+@page "/signup"
+@rendermode InteractiveWebAssembly
+@layout AuthLayout
+@using pos_app.Client.Models
+@using pos_app.Client.Services
+@using pos_app.Client.Components.Layout
+@inject AuthService AuthService
+@inject NavigationManager Navigation
+
+<PageTitle>Sign Up</PageTitle>
+
+<div class="container mt-3">
+	<div class="row justify-content-center ">
+		<div class="col-md-8">
+			<div class="card">
+				<div class="card-header bg-primary text-white">
+					<h4 class="mb-0 text-center">Sign Up</h4>
+				</div>
+				<div class="card-body">
+					@if (!string.IsNullOrEmpty(message))
+					{
+						<div class="alert @(isSuccess ? "alert-success" : "alert-danger") alert-dismissible fade show" role="alert">
+							@message
+							<button type="button" class="btn-close" @onclick="() => message = string.Empty"></button>
+						</div>
+					}
+
+					<EditForm Model="model" OnValidSubmit="HandleValidSubmit" FormName="signupForm">
+						<DataAnnotationsValidator />
+						<ValidationSummary />
+
+						<div class="row">
+							<div class="col-md-6">
+								<h5 class="mb-3">Company Information</h5>
+								
+								<div class="mb-3">
+									<label for="companyName" class="form-label">Company Name *</label>
+									<InputText @bind-Value="model.CompanyName" id="companyName" class="form-control" />
+									<ValidationMessage For="() => model.CompanyName" />
+								</div>
+
+								<div class="mb-3">
+									<label for="email" class="form-label">Email Address *</label>
+									<InputText @bind-Value="model.Email" id="email" class="form-control" />
+									<ValidationMessage For="() => model.Email" />
+								</div>
+
+								<div class="mb-3">
+									<label for="password" class="form-label">Password *</label>
+									<InputText @bind-Value="model.Password" id="password" type="password" class="form-control" />
+									<ValidationMessage For="() => model.Password" />
+								</div>
+
+								<div class="mb-3">
+									<label for="confirmPassword" class="form-label">Confirm Password *</label>
+									<InputText @bind-Value="model.ConfirmPassword" id="confirmPassword" type="password" class="form-control" />
+									<ValidationMessage For="() => model.ConfirmPassword" />
+								</div>
+
+								<div class="mb-3">
+									<label for="contactPerson" class="form-label">Contact Person *</label>
+									<InputText @bind-Value="model.ContactPerson" id="contactPerson" class="form-control" />
+									<ValidationMessage For="() => model.ContactPerson" />
+								</div>
+
+								<div class="mb-3">
+									<label for="cellNo" class="form-label">Cell Number *</label>
+									<InputText @bind-Value="model.CellNo" id="cellNo" class="form-control" />
+									<ValidationMessage For="() => model.CellNo" />
+								</div>
+							</div>
+
+							<div class="col-md-6">
+								<h5 class="mb-3">Database Connection</h5>
+								
+								<div class="mb-3">
+									<label for="connectionName" class="form-label">Connection Name</label>
+									<InputText @bind-Value="model.ConnectionName" id="connectionName" class="form-control" placeholder="e.g., Office Database" />
+									<ValidationMessage For="() => model.ConnectionName" />
+									<small class="form-text text-muted">Optional: Give your database connection a friendly name</small>
+								</div>
+
+								<div class="mb-3">
+									<label for="serverName" class="form-label">SQL Server Name *</label>
+									<InputText @bind-Value="model.ServerName" id="serverName" class="form-control" placeholder="e.g., localhost, 192.168.1.100, or computer name" />
+									<ValidationMessage For="() => model.ServerName" />
+									<small class="form-text text-muted">The name or IP address of your SQL Server</small>
+								</div>
+
+								<div class="mb-3">
+									<label for="port" class="form-label">Port</label>
+									<InputNumber @bind-Value="model.Port" id="port" class="form-control" />
+									<small class="form-text text-muted">Default: 1433 (leave empty for default)</small>
+								</div>
+
+								<div class="mb-3">
+									<label for="databaseName" class="form-label">Database Name *</label>
+									<InputText @bind-Value="model.DatabaseName" id="databaseName" class="form-control" placeholder="e.g., POS_Database" />
+									<ValidationMessage For="() => model.DatabaseName" />
+									<small class="form-text text-muted">The name of your POS database</small>
+								</div>
+
+								<div class="mb-3">
+									<label for="username" class="form-label">SQL Username</label>
+									<InputText @bind-Value="model.Username" id="username" class="form-control" placeholder="e.g., pos_user" />
+									<ValidationMessage For="() => model.Username" />
+								</div>
+
+								<div class="mb-3">
+									<label for="dbPassword" class="form-label">SQL Password</label>
+									<InputText @bind-Value="model.DatabasePassword" id="dbPassword" type="password" class="form-control" />
+									<ValidationMessage For="() => model.DatabasePassword" />
+								</div>
+
+								<div class="alert alert-info">
+									<strong>Note:</strong> Make sure your SQL Server is configured to accept remote connections and the firewall allows connections on port 1433.
+								</div>
+							</div>
+						</div>
+
+						<div class="d-grid">
+							<button type="submit" class="btn btn-success" disabled="@isLoading">
+								@if (isLoading)
+								{
+									<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+									<span class="visually-hidden">Creating account...</span>
+								}
+								else
+								{
+									<span>Sign Up</span>
+								}
+							</button>
+						</div>
+						<div class="text-center">
+							<p style="font-size: 15px; margin-top: 3px;">Already Have an account?
+								<a href="login">Login</a>
+							</p>
+						</div>
+					</EditForm>
+				</div>
+			</div>
+		</div>
+	</div>
+</div>
+
+@code {
+	private SignupViewModel model = new();
+	private bool isLoading = false;
+	private string message = string.Empty;
+	private bool isSuccess = false;
+
+	protected override async Task OnInitializedAsync()
+	{
+		// Redirect if already authenticated
+		if (await AuthService.IsAuthenticatedAsync())
+		{
+			Navigation.NavigateTo("/dashboard");
+		}
+	}
+
+	private async Task HandleValidSubmit()
+	{
+		isLoading = true;
+		message = string.Empty;
+
+		try
+		{
+			var response = await AuthService.SignupAsync(model);
+			
+			if (response.Success)
+			{
+				isSuccess = true;
+				message = "Account created successfully! Redirecting to dashboard...";
+				
+				// Wait a moment to show success message, then redirect
+				await Task.Delay(2000);
+				Navigation.NavigateTo("/dashboard");
+			}
+			else
+			{
+				isSuccess = false;
+				message = response.Message;
+			}
+		}
+		catch (Exception ex)
+		{
+			isSuccess = false;
+			message = $"An error occurred: {ex.Message}";
+		}
+		finally
+		{
+			isLoading = false;
+		}
+	}
+}

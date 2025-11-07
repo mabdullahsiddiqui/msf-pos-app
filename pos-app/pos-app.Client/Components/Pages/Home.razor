@@ -1,0 +1,74 @@
+@page "/"
+@using pos_app.Client.Services
+@inject NavigationManager Navigation
+@inject AuthService AuthService
+
+<PageTitle>Home - POS System</PageTitle>
+
+@if (isAuthenticated)
+{
+	<div class="min-h-screen bg-gray-50 flex items-center justify-center">
+		<div class="max-w-md w-full space-y-8 text-center">
+			<div>
+				<h1 class="text-4xl font-bold text-gray-900 mb-4">Welcome Back!</h1>
+				<p class="text-lg text-gray-600 mb-8">
+					You are already logged in. Redirecting to dashboard...
+				</p>
+			</div>
+		</div>
+	</div>
+}
+else
+{
+	<div class="min-h-screen bg-gray-50 flex items-center justify-center">
+		<div class="max-w-md w-full space-y-8 text-center">
+			<div>
+				<h1 class="text-4xl font-bold text-gray-900 mb-4">POS System</h1>
+				<p class="text-lg text-gray-600 mb-8">
+					Modern Point of Sale system bridging legacy VFP databases with a modern web interface
+				</p>
+				
+				<div class="space-y-4">
+					<div class="bg-white p-6 rounded-lg shadow-md">
+						<h3 class="text-lg font-medium text-gray-900 mb-2">Features</h3>
+						<ul class="text-sm text-gray-600 space-y-1">
+							<li>• Secure authentication with JWT tokens</li>
+							<li>• Dynamic database connections per client</li>
+							<li>• Real-time sales and inventory data</li>
+							<li>• Custom SQL query execution</li>
+							<li>• Modern responsive UI</li>
+						</ul>
+					</div>
+					
+					<div class="text-center">
+						<p class="text-sm text-gray-600 mb-4">
+							Redirecting to login...
+						</p>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+}
+
+@code {
+	private bool isAuthenticated = false;
+
+	protected override async Task OnInitializedAsync()
+	{
+		isAuthenticated = await AuthService.IsAuthenticatedAsync();
+		
+		if (isAuthenticated)
+		{
+			// Redirect to dashboard after a short delay
+			await Task.Delay(1500);
+			Navigation.NavigateTo("/dashboard");
+		}
+		else
+		{
+			// Redirect non-authenticated users directly to login
+			await Task.Delay(2000);
+			Navigation.NavigateTo("/login");
+		}
+	}
+}

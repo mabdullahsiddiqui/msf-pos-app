@@ -1,0 +1,565 @@
+@page "/user/profile"
+@rendermode InteractiveWebAssembly
+@using pos_app.Client.Models
+@using pos_app.Client.Services
+@inject AuthService AuthService
+@inject NavigationManager NavigationManager
+
+<PageTitle>Profile - User</PageTitle>
+
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h2><i class="fas fa-user-circle"></i> Profile Management</h2>
+                <button class="btn btn-outline-primary" @onclick="ToggleEditMode" disabled="@isLoading">
+                    <i class="fas @(isEditMode ? "fa-times" : "fa-edit")"></i> @(isEditMode ? "Cancel" : "Edit Profile")
+                </button>
+            </div>
+
+            @if (!string.IsNullOrEmpty(errorMessage))
+            {
+                <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                    <i class="fas fa-exclamation-triangle"></i> @errorMessage
+                    <button type="button" class="btn-close" @onclick="() => errorMessage = string.Empty"></button>
+                </div>
+            }
+
+            @if (!string.IsNullOrEmpty(successMessage))
+            {
+                <div class="alert alert-success alert-dismissible fade show" role="alert">
+                    <i class="fas fa-check-circle"></i> @successMessage
+                    <button type="button" class="btn-close" @onclick="() => successMessage = string.Empty"></button>
+                </div>
+            }
+
+            <div class="row">
+                <div class="col-lg-8">
+                    <!-- Profile Information -->
+                    <div class="card shadow">
+                        <div class="card-header bg-primary text-white">
+                            <h6 class="mb-0"><i class="fas fa-user"></i> Profile Information</h6>
+                        </div>
+                        <div class="card-body">
+                            @if (isEditMode)
+                            {
+                                <EditForm Model="profileUpdateRequest" OnValidSubmit="UpdateProfile" OnInvalidSubmit="OnProfileInvalidSubmit">
+                                    <DataAnnotationsValidator />
+                                    <ValidationSummary />
+                                    
+                                    <!-- Hidden field for Email (required for validation) -->
+                                    <input type="hidden" @bind="profileUpdateRequest.Email" />
+                                    
+                <div class="row">
+                    <div class="col-md-6">
+                                            <div class="mb-3">
+                                                <label for="email" class="form-label">Email</label>
+                                                <input id="email" type="email" class="form-control" value="@profileUpdateRequest.Email" readonly />
+                                                <small class="text-muted">Email cannot be changed</small>
+                                            </div>
+                            </div>
+                                        <div class="col-md-6">
+                                            <div class="mb-3">
+                                                <label for="companyName" class="form-label">Company Name</label>
+                                                <InputText id="companyName" class="form-control" @bind-Value="profileUpdateRequest.CompanyName" />
+                                                <ValidationMessage For="@(() => profileUpdateRequest.CompanyName)" />
+                            </div>
+                        </div>
+                    </div>
+                                    <div class="row">
+                                        <div class="col-md-6">
+                                            <div class="mb-3">
+                                                <label for="contactPerson" class="form-label">Contact Person</label>
+                                                <InputText id="contactPerson" class="form-control" @bind-Value="profileUpdateRequest.ContactPerson" />
+                                                <ValidationMessage For="@(() => profileUpdateRequest.ContactPerson)" />
+                                            </div>
+                                        </div>
+                    <div class="col-md-6">
+                                            <div class="mb-3">
+                                                <label for="cellNo" class="form-label">Phone Number</label>
+                                                <InputText id="cellNo" class="form-control" @bind-Value="profileUpdateRequest.CellNo" />
+                                                <ValidationMessage For="@(() => profileUpdateRequest.CellNo)" />
+                                            </div>
+                                        </div>
+                            </div>
+                                    <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                                        <button type="submit" class="btn btn-primary" disabled="@isLoading">
+                                            @if (isLoading)
+                                            {
+                                                <span class="spinner-border spinner-border-sm me-2" role="status"></span>
+                                            }
+                                            <i class="fas fa-save me-2"></i>Save Changes
+                                        </button>
+                                    </div>
+                                </EditForm>
+                            }
+                            else
+                            {
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <div class="mb-3">
+                                            <label class="form-label fw-bold">Email</label>
+                                            <p class="form-control-plaintext">@(currentProfile?.Email ?? "Not set")</p>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <div class="mb-3">
+                                            <label class="form-label fw-bold">Company Name</label>
+                                            <p class="form-control-plaintext">@(currentProfile?.CompanyName ?? "Not set")</p>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <div class="mb-3">
+                                            <label class="form-label fw-bold">Contact Person</label>
+                                            <p class="form-control-plaintext">@(currentProfile?.ContactPerson ?? "Not set")</p>
+                            </div>
+                        </div>
+                                    <div class="col-md-6">
+                                        <div class="mb-3">
+                                            <label class="form-label fw-bold">Phone Number</label>
+                                            <p class="form-control-plaintext">@(currentProfile?.CellNo ?? "Not set")</p>
+                    </div>
+                </div>
+                </div>
+            }
+    </div>
+</div>
+
+                    <!-- Database Information -->
+                    <div class="card shadow mt-3">
+                        <div class="card-header bg-info text-white">
+                            <h6 class="mb-0"><i class="fas fa-database me-2"></i> Database Information</h6>
+                </div>
+                        <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                        <label class="form-label fw-bold">Connection Name</label>
+                                        <p class="form-control-plaintext">@(currentProfile?.ConnectionName ?? "Not set")</p>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="mb-3">
+                                        <label class="form-label fw-bold">Server Name</label>
+                                        <p class="form-control-plaintext">@(currentProfile?.ServerName ?? "Not set")</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="mb-3">
+                                        <label class="form-label fw-bold">Database Name</label>
+                                        <p class="form-control-plaintext">@(currentProfile?.DatabaseName ?? "Not set")</p>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                        <label class="form-label fw-bold">Database Username</label>
+                                        <p class="form-control-plaintext">@(currentProfile?.Username ?? "Not set")</p>
+                                    </div>
+                                </div>
+                            </div>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                        <label class="form-label fw-bold">Port</label>
+                                        <p class="form-control-plaintext">@(currentProfile?.Port.ToString() ?? "Not set")</p>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                        <label class="form-label fw-bold">Database Type</label>
+                                        <p class="form-control-plaintext">@(currentProfile?.DatabaseType ?? "Not set")</p>
+                                    </div>
+                                </div>
+                                </div>
+                            </div>
+                        </div>
+
+                    <!-- Account Settings -->
+                    <div class="card shadow mt-3" id="settings">
+                        <div class="card-header bg-secondary text-white">
+                            <h6 class="mb-0"><i class="fas fa-cog"></i> Account Settings</h6>
+                        </div>
+                        <div class="card-body">
+                                <div class="mb-3">
+                                <label class="form-label">Account Status</label>
+                                <div class="d-flex align-items-center">
+                                    <span class="badge bg-success me-2">Active</span>
+                                    <small class="text-muted">Your account is active and secure</small>
+                                </div>
+                            </div>
+                            
+                                <div class="mb-3">
+                                <label class="form-label">Account Created</label>
+                                <div class="text-muted">
+                                    <i class="fas fa-calendar me-1"></i>
+                                    @(currentProfile?.CreatedAt.ToString("MMM dd, yyyy") ?? "Unknown")
+                                </div>
+                            </div>
+                            
+                            <div class="d-grid">
+                                <button class="btn btn-outline-secondary btn-sm" @onclick="RefreshProfile">
+                                    <i class="fas fa-sync-alt me-1"></i> Refresh Profile
+                                </button>
+                            </div>
+                                </div>
+                            </div>
+                        </div>
+
+                <!-- Password Management -->
+                <div class="col-lg-4" id="change-password">
+                    <div class="card shadow">
+                        <div class="card-header bg-warning text-dark">
+                            <h6 class="mb-0"><i class="fas fa-key"></i> Password Management</h6>
+                        </div>
+                        <div class="card-body">
+                            <EditForm Model="passwordChangeRequest" OnValidSubmit="ChangePassword" OnInvalidSubmit="OnInvalidSubmit">
+                                <DataAnnotationsValidator />
+                                
+                                <!-- Hidden field for Username -->
+                                <input type="hidden" @bind="passwordChangeRequest.Username" />
+                                
+                                <!-- Validation Summary -->
+                                <ValidationSummary />
+                                
+                                <div class="mb-3">
+                                    <label for="currentPassword" class="form-label">Current Password</label>
+                                    <InputText id="currentPassword" type="password" class="form-control" @bind-Value="passwordChangeRequest.CurrentPassword" />
+                                    <ValidationMessage For="@(() => passwordChangeRequest.CurrentPassword)" />
+                                </div>
+
+                                <div class="mb-3">
+                                    <label for="newPassword" class="form-label">New Password</label>
+                                    <InputText id="newPassword" type="password" class="form-control" @bind-Value="passwordChangeRequest.NewPassword" />
+                                    <ValidationMessage For="@(() => passwordChangeRequest.NewPassword)" />
+                                </div>
+
+                                <div class="mb-3">
+                                    <label for="confirmPassword" class="form-label">Confirm New Password</label>
+                                    <InputText id="confirmPassword" type="password" class="form-control" @bind-Value="passwordChangeRequest.ConfirmPassword" />
+                                    <ValidationMessage For="@(() => passwordChangeRequest.ConfirmPassword)" />
+                        </div>
+
+                                @if (!string.IsNullOrEmpty(passwordChangeRequest.NewPassword))
+                        {
+                            <div class="mb-3">
+                                        <div class="d-flex justify-content-between align-items-center mb-2">
+                                            <small class="text-muted fw-bold">Password Strength:</small>
+                                            <small class="text-muted">@GetPasswordStrengthText()</small>
+                                        </div>
+                                        <div class="progress" style="height: 8px; border-radius: 4px;">
+                                            <div class="progress-bar @GetPasswordStrengthClass()" role="progressbar" 
+                                                 style="width: @GetPasswordStrengthPercentage()%; border-radius: 4px;"></div>
+                                        </div>
+                            </div>
+                        }
+
+                                <div class="d-grid">
+                                    <button type="submit" class="btn btn-warning" disabled="@isPasswordLoading">
+                                        @if (isPasswordLoading)
+                                        {
+                                            <span class="spinner-border spinner-border-sm me-2" role="status"></span>
+                                        }
+                                        <i class="fas fa-key me-2"></i>Change Password
+                                    </button>
+                                </div>
+
+
+                                <!-- Password Requirements -->
+                                <div class="mt-3">
+                                    <small class="text-muted">
+                                        <i class="fas fa-info-circle text-primary me-1"></i>
+                                        Password must be at least 8 characters long and contain uppercase, lowercase, number, and special character.
+                                    </small>
+                                </div>
+                            </EditForm>
+                        </div>
+                    </div>
+
+                    <!-- Security Tips -->
+                    <div class="card shadow mt-3">
+                        <div class="card-header bg-info text-white">
+                            <h6 class="mb-0"><i class="fas fa-shield-alt"></i> Security Tips</h6>
+                        </div>
+                        <div class="card-body">
+                            <ul class="list-unstyled mb-0">
+                                <li class="mb-2"><i class="fas fa-check text-success"></i> Use a strong, unique password</li>
+                                <li class="mb-2"><i class="fas fa-check text-success"></i> Don't share your credentials</li>
+                                <li class="mb-2"><i class="fas fa-check text-success"></i> Log out when finished</li>
+                                <li class="mb-0"><i class="fas fa-check text-success"></i> Keep your email updated</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private UserProfileInfo? currentProfile;
+    private UserUpdateProfileRequest profileUpdateRequest = new();
+    private UserChangePasswordRequest passwordChangeRequest = new();
+    private bool isEditMode = false;
+    private bool isLoading = false;
+    private bool isPasswordLoading = false;
+    private string errorMessage = string.Empty;
+    private string successMessage = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadProfileData();
+        
+        // Ensure username is always populated
+        if (currentProfile != null && string.IsNullOrEmpty(passwordChangeRequest.Username))
+        {
+            passwordChangeRequest.Username = currentProfile.Username;
+            Console.WriteLine($"UserProfile: Initialized username: '{passwordChangeRequest.Username}'");
+        }
+    }
+
+    private async Task LoadProfileData()
+    {
+        try
+        {
+            isLoading = true;
+            var response = await AuthService.GetProfileAsync();
+            
+            if (response.Success && response.Data != null)
+            {
+                currentProfile = response.Data;
+                profileUpdateRequest = new UserUpdateProfileRequest
+                {
+                    // Username is not editable - it's the SQL Server login credential
+                    Email = currentProfile.Email,
+                    CompanyName = currentProfile.CompanyName,
+                    ContactPerson = currentProfile.ContactPerson,
+                    CellNo = currentProfile.CellNo
+                };
+                
+                // Initialize password change request with username
+                passwordChangeRequest = new UserChangePasswordRequest
+                {
+                    Username = currentProfile.Username
+                };
+            }
+            else
+            {
+                errorMessage = "Failed to load profile data";
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error loading profile: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private void ToggleEditMode()
+    {
+        isEditMode = !isEditMode;
+        if (!isEditMode)
+        {
+            if (currentProfile != null)
+            {
+                profileUpdateRequest = new UserUpdateProfileRequest
+                {
+                    // Username is not editable - it's the SQL Server login credential
+                    Email = currentProfile.Email,
+                    CompanyName = currentProfile.CompanyName,
+                    ContactPerson = currentProfile.ContactPerson,
+                    CellNo = currentProfile.CellNo
+                };
+                
+                // Reset password change request
+                passwordChangeRequest = new UserChangePasswordRequest
+                {
+                    Username = currentProfile.Username
+                };
+            }
+        }
+    }
+
+    private async Task UpdateProfile()
+    {
+        try
+        {
+            Console.WriteLine("UserProfile: UpdateProfile method called");
+            Console.WriteLine($"UserProfile: Email = '{profileUpdateRequest.Email}'");
+            Console.WriteLine($"UserProfile: CompanyName = '{profileUpdateRequest.CompanyName}'");
+            Console.WriteLine($"UserProfile: ContactPerson = '{profileUpdateRequest.ContactPerson}'");
+            Console.WriteLine($"UserProfile: CellNo = '{profileUpdateRequest.CellNo}'");
+            
+            isLoading = true;
+            errorMessage = string.Empty;
+            successMessage = string.Empty;
+
+            Console.WriteLine("UserProfile: Calling UpdateUserProfileAsync...");
+            var response = await AuthService.UpdateUserProfileAsync(profileUpdateRequest);
+            Console.WriteLine($"UserProfile: Response - Success: {response.Success}, Message: {response.Message}");
+            
+            if (response.Success)
+            {
+                successMessage = "Profile updated successfully!";
+                await LoadProfileData();
+                isEditMode = false;
+                
+                // Force page reload to refresh the header with updated Contact Person
+                await Task.Delay(1000); // Small delay to show success message
+                NavigationManager.NavigateTo(NavigationManager.Uri, forceLoad: true);
+                }
+                else
+                {
+                errorMessage = response.Message;
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"UserProfile: Exception in UpdateProfile: {ex.Message}");
+            Console.WriteLine($"UserProfile: Exception stack trace: {ex.StackTrace}");
+            errorMessage = $"Error updating profile: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private void OnProfileInvalidSubmit()
+    {
+        Console.WriteLine("UserProfile: Profile form validation failed");
+        Console.WriteLine($"UserProfile: Email = '{profileUpdateRequest.Email}' (empty={string.IsNullOrEmpty(profileUpdateRequest.Email)})");
+        Console.WriteLine($"UserProfile: CompanyName = '{profileUpdateRequest.CompanyName}' (empty={string.IsNullOrEmpty(profileUpdateRequest.CompanyName)})");
+        Console.WriteLine($"UserProfile: ContactPerson = '{profileUpdateRequest.ContactPerson}' (empty={string.IsNullOrEmpty(profileUpdateRequest.ContactPerson)})");
+        Console.WriteLine($"UserProfile: CellNo = '{profileUpdateRequest.CellNo}' (empty={string.IsNullOrEmpty(profileUpdateRequest.CellNo)})");
+        errorMessage = "Please fill in all required fields correctly.";
+        StateHasChanged();
+    }
+
+    private async Task ChangePassword()
+    {
+        try
+        {
+            Console.WriteLine("UserProfile: ChangePassword method called");
+            Console.WriteLine($"UserProfile: Username = '{passwordChangeRequest.Username}'");
+            Console.WriteLine($"UserProfile: CurrentPassword length = {passwordChangeRequest.CurrentPassword?.Length}");
+            Console.WriteLine($"UserProfile: NewPassword length = {passwordChangeRequest.NewPassword?.Length}");
+            Console.WriteLine($"UserProfile: ConfirmPassword length = {passwordChangeRequest.ConfirmPassword?.Length}");
+            
+            isPasswordLoading = true;
+            errorMessage = string.Empty;
+            successMessage = string.Empty;
+
+            Console.WriteLine("UserProfile: Calling ChangeUserPasswordAsync...");
+            var response = await AuthService.ChangeUserPasswordAsync(passwordChangeRequest);
+            
+            Console.WriteLine($"UserProfile: Response received - Success: {response.Success}, Message: {response.Message}");
+            
+            if (response.Success)
+            {
+                successMessage = "Password changed successfully!";
+                passwordChangeRequest = new UserChangePasswordRequest
+                {
+                    Username = currentProfile?.Username ?? string.Empty // Re-populate username
+                };
+            }
+            else
+            {
+                errorMessage = response.Message;
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"UserProfile: Exception in ChangePassword: {ex.Message}");
+            Console.WriteLine($"UserProfile: Exception stack trace: {ex.StackTrace}");
+            errorMessage = $"Error changing password: {ex.Message}";
+        }
+        finally
+        {
+            isPasswordLoading = false;
+        }
+    }
+
+    private string GetPasswordStrengthClass()
+    {
+        var strength = GetPasswordStrength();
+        if (strength < 25) return "bg-danger";
+        if (strength < 50) return "bg-warning";
+        if (strength < 75) return "bg-info";
+        return "bg-success";
+    }
+
+    private int GetPasswordStrengthPercentage()
+    {
+        return GetPasswordStrength();
+    }
+
+    private string GetPasswordStrengthText()
+    {
+        var strength = GetPasswordStrength();
+        if (strength < 25) return "Weak";
+        if (strength < 50) return "Fair";
+        if (strength < 75) return "Good";
+        return "Strong";
+    }
+
+    private int GetPasswordStrength()
+    {
+        if (string.IsNullOrEmpty(passwordChangeRequest.NewPassword))
+            return 0;
+
+        var password = passwordChangeRequest.NewPassword;
+        var score = 0;
+
+        // Length check
+        if (password.Length >= 8) score += 20;
+        if (password.Length >= 12) score += 10;
+
+        // Character variety checks
+        if (password.Any(char.IsUpper)) score += 15;
+        if (password.Any(char.IsLower)) score += 15;
+        if (password.Any(char.IsDigit)) score += 15;
+        if (password.Any(c => "!@#$%^&*()_+-=[]{}|;:,.<>?".Contains(c))) score += 15;
+
+        // Additional complexity
+        if (password.Length >= 16) score += 10;
+
+        return Math.Min(score, 100);
+    }
+
+
+    private void OnInvalidSubmit()
+    {
+        Console.WriteLine("UserProfile: Form validation failed");
+        errorMessage = "Please fill in all required fields correctly.";
+        EnsureUsernamePopulated();
+        StateHasChanged();
+    }
+
+    private void OnUsernameChanged()
+    {
+        Console.WriteLine($"UserProfile: Username field changed to: '{passwordChangeRequest.Username}'");
+    }
+
+    private void EnsureUsernamePopulated()
+    {
+        // Ensure username is always populated before rendering
+        if (currentProfile != null && string.IsNullOrEmpty(passwordChangeRequest.Username))
+        {
+            passwordChangeRequest.Username = currentProfile.Username;
+            Console.WriteLine($"UserProfile: EnsureUsernamePopulated - Re-populated username: '{passwordChangeRequest.Username}'");
+        }
+    }
+
+    private async Task RefreshProfile()
+    {
+        await LoadProfileData();
+        successMessage = "Profile refreshed successfully!";
+    }
+}

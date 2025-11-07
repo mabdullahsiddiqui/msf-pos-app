@@ -1,0 +1,104 @@
+@using pos_app.Client.Services
+@inject AuthenticationStateService AuthState
+@inject NavigationManager Navigation
+@inject IJSRuntime JSRuntime
+
+@if (isLoading)
+{
+    <div class="d-flex justify-content-center align-items-center" style="height: 100vh;">
+        <div class="spinner-border text-primary" role="status">
+            <span class="visually-hidden">Loading...</span>
+        </div>
+    </div>
+}
+else if (!isAuthenticated)
+{
+    <div class="container-fluid">
+        <div class="row justify-content-center">
+            <div class="col-md-6 col-lg-4">
+                <div class="card shadow mt-5">
+                    <div class="card-header text-center bg-danger text-white">
+                        <h5><i class="fas fa-lock"></i> Access Denied</h5>
+                    </div>
+                    <div class="card-body text-center">
+                        <i class="fas fa-exclamation-triangle fa-3x text-warning mb-3"></i>
+                        <h6>Authentication Required</h6>
+                        <p class="text-muted">You need to be logged in to access this page.</p>
+                        <button class="btn btn-primary" @onclick="RedirectToLogin">
+                            <i class="fas fa-sign-in-alt"></i> Go to Login
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+else
+{
+    @ChildContent
+}
+
+@code {
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    
+    private bool isLoading = true;
+    private bool isAuthenticated = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await CheckAuthentication();
+    }
+
+    private async Task CheckAuthentication()
+    {
+        try
+        {
+            // First check if we have data in memory
+            if (AuthState.IsAuthenticated)
+            {
+                isAuthenticated = true;
+                isLoading = false;
+                return;
+            }
+
+            // If not in memory, check localStorage directly
+            var token = await JSRuntime.InvokeAsync<string?>("localStorage.getItem", "superadmin_auth");
+            
+            if (!string.IsNullOrEmpty(token))
+            {
+                // Try to restore the authentication state
+                await AuthState.IsSuperAdminAuthenticatedAsync();
+                
+                // Check again after restoration
+                if (AuthState.IsAuthenticated)
+                {
+                    isAuthenticated = true;
+                }
+                else
+                {
+                    // Clear invalid data
+                    await JSRuntime.InvokeVoidAsync("localStorage.removeItem", "superadmin_auth");
+                }
+            }
+            
+            if (!isAuthenticated)
+            {
+                // Small delay to show loading state
+                await Task.Delay(500);
+            }
+        }
+        catch (Exception)
+        {
+            // If there's any error checking auth, show access denied
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private void RedirectToLogin()
+    {
+        Navigation.NavigateTo("/superadmin/login");
+    }
+}

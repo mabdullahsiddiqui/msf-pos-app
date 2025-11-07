@@ -1,0 +1,206 @@
+@using pos_app.Client.Components.Layout
+@using pos_app.Client.Services
+@inject DataService DataService
+@inject AuthService AuthService
+@inject NavigationManager Navigation
+
+<div class="top-row ps-3 navbar navbar-dark">
+    <div class="container-fluid">
+        <a class="navbar-brand" href="">@companyName</a>
+    </div>
+</div>
+
+<input type="checkbox" title="Navigation menu" class="navbar-toggler" />
+
+<div class="nav-scrollable" onclick="document.querySelector('.navbar-toggler').click()">
+    <nav class="flex-column" style="height: 100%; display: flex;">
+        <div>
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="dashboard">
+                    <span class="bi bi-bar-chart" aria-hidden="true"></span> Dashboard
+                </NavLink>
+            </div>
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="customers">
+                    <span class="bi bi-people-fill" aria-hidden="true"></span> Customer Management
+                </NavLink>
+            </div>
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="reports/trial-balance">
+                    <span class="bi bi-file-earmark-text" aria-hidden="true"></span> Trial Balance
+                </NavLink>
+            </div>
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="reports/three-trial-balance">
+                    <span class="bi bi-file-earmark-text" aria-hidden="true"></span> 3 Trial Balance
+                </NavLink>
+            </div>
+            <div class="nav-item px-3">
+                        <NavLink class="nav-link" href="reports/monthly-account-balance">
+                            <span class="bi bi-calendar3" aria-hidden="true"></span> Month Wise Report
+                        </NavLink>
+            </div>
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="reports/ledger">
+                    <span class="bi bi-journal-text" aria-hidden="true"></span> Ledger Report
+                </NavLink>
+            </div>
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="reports/cash-book">
+                    <span class="bi bi-book-open" aria-hidden="true"></span> Cash Book
+                </NavLink>
+            </div>
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="reports/journal-book">
+                    <span class="bi bi-journal" aria-hidden="true"></span> Journal Book
+                </NavLink>
+            </div>
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="reports/transaction-journal">
+                    <span class="bi bi-receipt" aria-hidden="true"></span> Transaction Journal
+                </NavLink>
+            </div>
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="database-connections">
+                    <span class="bi bi-database" aria-hidden="true"></span> Database Connections
+                </NavLink>
+            </div>
+        </div>
+        <div style="margin-top: auto;">
+            <!-- User Information -->
+            <div class="nav-item px-3">
+                <div class="nav-link text-light">
+                    <span class="bi bi-person-circle" aria-hidden="true"></span> 
+                    @userDisplayName
+                </div>
+            </div>
+            
+            <!-- Profile Link -->
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="user/profile">
+                    <span class="bi bi-person-gear" aria-hidden="true"></span> Profile
+                </NavLink>
+            </div>
+            
+            <!-- Logout -->
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="login" @onclick="Logout">
+                    <span class="bi bi-box-arrow-right" aria-hidden="true"></span> Logout
+                </NavLink>
+            </div>
+        </div>
+    </nav>
+</div>
+
+
+@code {
+	private List<Dictionary<string, object>>? salesData;
+	private List<Dictionary<string, object>>? inventoryData;
+	private bool isAuthenticated = false;
+	private string userDisplayName = "Loading...";
+	private string companyName = "Loading...";
+
+	protected override async Task OnInitializedAsync()
+	{
+		// Intentionally left blank to avoid JSInterop during prerender
+	}
+
+	protected override async Task OnAfterRenderAsync(bool firstRender)
+	{
+		if (firstRender)
+		{
+			// Only check authentication if we're not on Super Admin pages
+			var currentUri = Navigation.Uri;
+			if (!currentUri.Contains("/superadmin"))
+			{
+				isAuthenticated = await AuthService.IsAuthenticatedAsync();
+				if (!isAuthenticated)
+				{
+					Navigation.NavigateTo("/login", true);
+					return;
+				}
+
+				await LoadDashboardData();
+				await LoadUserInfo();
+			}
+			StateHasChanged();
+		}
+	}
+
+	private async Task LoadDashboardData()
+	{
+		try
+		{
+			var tasks = new List<Task>
+			{
+				LoadSalesData(),
+				LoadInventoryData()
+			};
+
+			await Task.WhenAll(tasks);
+		}
+		catch (Exception ex)
+		{
+			// Handle error
+		}
+	}
+
+	private async Task LoadSalesData()
+	{
+		try
+		{
+			salesData = await DataService.GetSalesAsync();
+		}
+		catch (Exception ex)
+		{
+			// Handle error
+		}
+	}
+
+	private async Task LoadInventoryData()
+	{
+		try
+		{
+			inventoryData = await DataService.GetInventoryAsync();
+		}
+		catch (Exception ex)
+		{
+			// Handle error
+		}
+	}
+
+	private async Task LoadUserInfo()
+	{
+		try
+		{
+			var response = await AuthService.GetProfileAsync();
+			if (response.Success && response.Data != null)
+			{
+				userDisplayName = response.Data.Username ?? response.Data.Email ?? "User";
+				companyName = response.Data.CompanyName ?? "Company";
+			}
+			else
+			{
+				userDisplayName = "User";
+				companyName = "Company";
+			}
+		}
+		catch (Exception ex)
+		{
+			userDisplayName = "User";
+			companyName = "Company";
+		}
+	}
+
+	private async Task Logout()
+	{
+		await AuthService.LogoutAsync();
+		Navigation.NavigateTo("/login", true);
+	}
+
+	private void GoToLogin()
+	{
+		Navigation.NavigateTo("/login", true);
+	}
+}
+

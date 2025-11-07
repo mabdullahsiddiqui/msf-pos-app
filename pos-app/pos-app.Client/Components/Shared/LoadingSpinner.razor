@@ -1,0 +1,21 @@
+@using Microsoft.AspNetCore.Components
+
+<div class="text-center py-5">
+    <div class="spinner-border text-primary @SizeClass" role="status">
+        <span class="visually-hidden">Loading...</span>
+    </div>
+    @if (!string.IsNullOrWhiteSpace(Message))
+    {
+        <p class="mt-2">@Message</p>
+    }
+</div>
+
+@code {
+    // Custom loading message to display below the spinner
+    [Parameter] public string? Message { get; set; }
+
+    // Size of the spinner. Options: "sm" for small, empty string for default size
+    [Parameter] public string Size { get; set; } = "";
+
+    private string SizeClass => Size == "sm" ? "spinner-border-sm" : "";
+}

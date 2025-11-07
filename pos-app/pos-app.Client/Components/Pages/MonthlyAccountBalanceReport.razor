@@ -1,0 +1,232 @@
+@page "/reports/monthly-account-balance"
+@using pos_app.Client.Services
+@using pos_app.Client.Models
+@using pos_app.Client.Components.Shared
+@inject DataService DataService
+
+<PageTitle>Month Wise Report - POS System</PageTitle>
+
+<style>
+    .table-responsive {
+        max-height: 70vh;
+        overflow-y: auto;
+    }
+    
+    .month-column {
+        min-width: 120px;
+        text-align: right;
+    }
+    
+    .account-name-column {
+        min-width: 200px;
+        position: sticky;
+        left: 0;
+        background-color: white !important;
+        z-index: 10;
+        box-shadow: 2px 0 5px rgba(0, 0, 0, 0.1);
+    }
+    
+    thead .account-name-column {
+        background-color: #f8f9fa !important;
+    }
+    
+    tbody tr:nth-of-type(even) .account-name-column {
+        background-color: white !important;
+    }
+    
+    .total-column {
+        min-width: 120px;
+        text-align: right;
+        font-weight: bold;
+        background-color: #f8f9fa !important;
+        position: sticky;
+        right: 0;
+        z-index: 10;
+        box-shadow: -2px 0 5px rgba(0, 0, 0, 0.1);
+    }
+    
+    thead .total-column {
+        background-color: #e9ecef !important;
+    }
+    
+    tbody tr:nth-of-type(even) .total-column {
+        background-color: #f8f9fa !important;
+    }
+    
+    .balance-negative {
+        color: #198754;
+    }
+    
+    .balance-positive {
+        color: #dc3545;
+    }
+    
+    .balance-zero {
+        color: #6c757d;
+    }
+</style>
+
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <!-- Report Filters -->
+            <FilterCard Title="Report Filters" IconClass="fas fa-calendar-alt">
+                <div class="row">
+                    <SearchableAccountInput Label="From Account:" Id="fromAccount" @bind-Value="fromAccount" Placeholder="Search accounts..." ColumnClass="col-md-4" />
+                    <SearchableAccountInput Label="Upto Account:" Id="uptoAccount" @bind-Value="uptoAccount" Placeholder="Search accounts..." ColumnClass="col-md-4" />
+                    <div class="col-md-4 d-flex align-items-end">
+                        <ActionButton Text="Generate Report" IconClass="fas fa-search" OnClick="LoadMonthlyAccountBalance" IsLoading="@isLoading" IsDisabled="@isLoading" />
+                    </div>
+                </div>
+            </FilterCard>
+
+            <!-- Loading Indicator -->
+            @if (isLoading)
+            {
+                <LoadingSpinner Message="Generating monthly account balance report..." />
+            }
+
+            <!-- Error Message -->
+            <ErrorAlert Message="@errorMessage" IconClass="bi bi-exclamation-triangle" />
+
+            <!-- Report Data -->
+            @if (monthlyAccountBalanceData != null && monthlyAccountBalanceData.Success)
+            {
+                <ReportTable FilterableColumns="@(new List<int> { 0 })">
+                    <HeaderContent>
+                        <ReportTitleHeader Title="Month Wise Report" IconClass="fas fa-calendar-alt">
+                            <DateRangeContent>
+                                From Date: @monthlyAccountBalanceData.FromDate.ToString("dd/MM/yyyy") 
+                                To Date: @monthlyAccountBalanceData.ToDate.ToString("dd/MM/yyyy")
+                            </DateRangeContent>
+                        </ReportTitleHeader>
+                    </HeaderContent>
+                    
+                    <SummaryCards>
+                        <SummaryCard Title="Report Period" Value="@($"{monthlyAccountBalanceData.FromDate.ToString("MMM yyyy")} - {monthlyAccountBalanceData.ToDate.ToString("MMM yyyy")}")" BgColor="info" />
+                        <SummaryCard Title="Account Range" Value="@($"{monthlyAccountBalanceData.FromAccount} - {monthlyAccountBalanceData.UptoAccount}")" BgColor="primary" />
+                        <SummaryCard Title="Total Accounts" Value="@monthlyAccountBalanceData.Data.Count.ToString()" BgColor="success" />
+                        <SummaryCard Title="Months Covered" Value="@monthlyAccountBalanceData.MonthColumns.Count.ToString()" BgColor="warning" />
+                    </SummaryCards>
+
+                    <BodyContent>
+                        <div class="table-responsive">
+                            <table class="table table-bordered table-striped">
+                                <thead>
+                                    <tr>
+                                        <th class="account-name-column">A/C Name</th>
+                                        @foreach (var month in monthlyAccountBalanceData.MonthColumns)
+                                        {
+                                            <th class="month-column">@month</th>
+                                        }
+                                        <th class="total-column">Total</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var item in monthlyAccountBalanceData.Data)
+                                    {
+                                        <tr>
+                                            <td class="account-name-column">
+                                                <strong>@item.AccCode</strong><br>
+                                                <small class="text-muted">@item.AccName</small>
+                                            </td>
+                                            @foreach (var month in monthlyAccountBalanceData.MonthColumns)
+                                            {
+                                                var balance = item.MonthlyBalances.ContainsKey(month) ? item.MonthlyBalances[month] : 0;
+                                                <td class="month-column">
+                                                    @if (balance != 0)
+                                                    {
+                                                        <span class="@(balance < 0 ? "balance-negative" : "balance-positive")">
+                                                            @balance.ToString("N0")
+                                                        </span>
+                                                    }
+                                                    else
+                                                    {
+                                                        <span class="balance-zero">-</span>
+                                                    }
+                                                </td>
+                                            }
+                                            <td class="total-column">
+                                                @if (item.Total != 0)
+                                                {
+                                                    <span class="@(item.Total < 0 ? "balance-negative" : "balance-positive")">
+                                                        @item.Total.ToString("N0")
+                                                    </span>
+                                                }
+                                                else
+                                                {
+                                                    <span class="balance-zero">-</span>
+                                                }
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    </BodyContent>
+
+                    <FooterContent>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <strong>Report Period: @monthlyAccountBalanceData.FromDate.ToString("MMM yyyy") - @monthlyAccountBalanceData.ToDate.ToString("MMM yyyy")</strong>
+                            </div>
+                            <div class="col-md-6">
+                                <strong>Account Range: @monthlyAccountBalanceData.FromAccount - @monthlyAccountBalanceData.UptoAccount</strong>
+                            </div>
+                        </div>
+                        <div class="row mt-2">
+                            <div class="col-md-6">
+                                <strong>Total Accounts: @monthlyAccountBalanceData.Data.Count</strong>
+                            </div>
+                            <div class="col-md-6">
+                                <strong>Months Covered: @monthlyAccountBalanceData.MonthColumns.Count</strong>
+                            </div>
+                        </div>
+                    </FooterContent>
+                </ReportTable>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    private MonthlyAccountBalanceResponse? monthlyAccountBalanceData;
+    private bool isLoading = false;
+    private string errorMessage = string.Empty;
+    
+    // Filter parameters
+    private string fromAccount = "";
+    private string uptoAccount = "";
+
+    protected override Task OnInitializedAsync()
+    {
+        return Task.CompletedTask;
+    }
+
+    private async Task LoadMonthlyAccountBalance()
+    {
+        isLoading = true;
+        errorMessage = string.Empty;
+        StateHasChanged();
+
+        try
+        {
+            monthlyAccountBalanceData = await DataService.GetMonthlyAccountBalanceAsync(null, null, fromAccount, uptoAccount);
+            
+            if (!monthlyAccountBalanceData.Success)
+            {
+                errorMessage = monthlyAccountBalanceData.Message;
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error loading monthly account balance: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+}
+

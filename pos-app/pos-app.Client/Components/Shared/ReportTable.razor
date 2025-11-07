@@ -1,0 +1,167 @@
+@using Microsoft.AspNetCore.Components
+@using Microsoft.JSInterop
+@inject IJSRuntime JSRuntime
+@implements IAsyncDisposable
+
+<div class="report-table-container">
+    @if (HeaderContent != null)
+    {
+        <div class="report-header">
+            @HeaderContent
+        </div>
+    }
+
+    @if (SummaryCards != null)
+    {
+        <div class="row mb-4">
+            @SummaryCards
+        </div>
+    }
+
+    <div class="table-container">
+        @if (TableHeaders != null && TableHeaders.Any())
+        {
+            <table class="table table-bordered table-striped" id="@TableId">
+                <thead>
+                    <tr>
+                        @foreach (var header in TableHeaders)
+                        {
+                            <th>@header</th>
+                        }
+                    </tr>
+                </thead>
+                <tbody>
+                    @BodyContent
+                </tbody>
+            </table>
+        }
+        else
+        {
+            <div id="@TableId">
+                @BodyContent
+            </div>
+        }
+    </div>
+
+    @if (FooterContent != null)
+    {
+        <div class="report-footer">
+            @FooterContent
+        </div>
+    }
+</div>
+
+<style>
+    .report-table-container {
+        margin-bottom: 20px;
+    }
+
+    .report-header {
+        background-color: #e0e0e0;
+        padding: 15px;
+        margin-bottom: 20px;
+        border-radius: 5px;
+    }
+
+    .report-footer {
+        background-color: #e0e0e0;
+        padding: 10px;
+        margin-top: 20px;
+        border-radius: 5px;
+    }
+
+    .table-container {
+        overflow-x: auto;
+        border-radius: 5px;
+        border: 1px solid #dee2e6;
+    }
+
+    .table {
+        margin-bottom: 0;
+    }
+
+    .table thead th {
+        background-color: #e0e0e0;
+        border-bottom: 2px solid #dee2e6;
+        font-weight: 600;
+    }
+
+    .table tbody tr:hover {
+        background-color: #f8f9fa;
+    }
+
+    .table-bordered th,
+    .table-bordered td {
+        border: 1px solid #dee2e6;
+    }
+
+    .filter-row {
+        background-color: #f8f9fa !important;
+    }
+
+    .filter-row th {
+        background-color: #f8f9fa !important;
+        padding: 4px !important;
+    }
+</style>
+
+@code {
+    [Parameter] public RenderFragment? HeaderContent { get; set; }
+    [Parameter] public RenderFragment? SummaryCards { get; set; }
+    [Parameter] public List<string>? TableHeaders { get; set; }
+    [Parameter] public RenderFragment? BodyContent { get; set; }
+    [Parameter] public RenderFragment? FooterContent { get; set; }
+    
+    // Column filter parameters
+    [Parameter] public bool EnableColumnFilters { get; set; } = true;
+    [Parameter] public List<int>? FilterableColumns { get; set; }
+
+    private string TableId { get; set; } = string.Empty;
+    private List<int> EffectiveFilterableColumns { get; set; } = new();
+    private IJSObjectReference? jsModule;
+
+    protected override void OnInitialized()
+    {
+        // Generate unique table ID
+        TableId = $"report-table-{Guid.NewGuid():N}";
+        
+        // Determine filterable columns
+        if (TableHeaders != null && TableHeaders.Any())
+        {
+            // For TableHeaders mode, filter all text columns (all columns by default)
+            EffectiveFilterableColumns = FilterableColumns ?? Enumerable.Range(0, TableHeaders.Count).ToList();
+        }
+        else if (FilterableColumns != null && FilterableColumns.Any())
+        {
+            // For custom table mode, use provided FilterableColumns
+            EffectiveFilterableColumns = FilterableColumns;
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && EnableColumnFilters && EffectiveFilterableColumns.Any())
+        {
+            try
+            {
+                // Wait a bit for table to be fully rendered
+                await Task.Delay(200);
+                
+                // Initialize filters
+                await JSRuntime.InvokeVoidAsync("tableFilter.initTableFilters", TableId, EffectiveFilterableColumns.ToArray());
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error initializing table filters: {ex.Message}");
+            }
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (jsModule != null)
+        {
+            await jsModule.DisposeAsync();
+        }
+    }
+}

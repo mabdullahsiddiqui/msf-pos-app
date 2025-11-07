@@ -1,0 +1,332 @@
+@page "/dashboard"
+@using pos_app.Client.Services
+@using pos_app.Client.Models
+@inject DataService DataService
+@inject IJSRuntime JSRuntime
+
+<PageTitle>Client Dashboard</PageTitle>
+
+<div class="container-fluid">
+        <div class="row">
+            <div class="col-12">
+                <h2 class="mb-4">
+                    <i class="fas fa-chart-line me-2"></i>
+                    Client Dashboard
+                    @if (!string.IsNullOrEmpty(dashboardData.MonthName))
+                    {
+                        <small class="text-muted ms-2">- @dashboardData.MonthName</small>
+                    }
+                </h2>
+            </div>
+        </div>
+
+    @if (isLoading)
+    {
+        <div class="text-center">
+            <div class="spinner-border" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <p class="mt-2">Loading dashboard data...</p>
+        </div>
+    }
+    else if (connectionError)
+    {
+        <div class="alert alert-danger">
+            <i class="fas fa-exclamation-triangle me-2"></i>
+            <strong>Connection Error:</strong> Unable to connect to your database. Please check your database connection settings.
+            <button class="btn btn-sm btn-outline-danger ms-2" @onclick="TestConnection">
+                <i class="fas fa-sync-alt me-1"></i>
+                Test Connection
+            </button>
+        </div>
+    }
+    else
+    {
+        <!-- Statistics Cards -->
+        <div class="row mb-4">
+            <div class="col-md-3">
+                <div class="card bg-primary text-white">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between">
+                            <div>
+                                <h4 class="card-title">Total Sales</h4>
+                                <h2>@CurrencyHelper.FormatNumber(dashboardData.TotalSales)</h2>
+                            </div>
+                            <div class="align-self-center">
+                                <i class="fas fa-dollar-sign fa-2x"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card bg-success text-white">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between">
+                            <div>
+                                <h4 class="card-title">Total Purchases</h4>
+                                <h2>@CurrencyHelper.FormatNumber(dashboardData.TotalPurchases)</h2>
+                            </div>
+                            <div class="align-self-center">
+                                <i class="fas fa-shopping-cart fa-2x"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card bg-info text-white">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between">
+                            <div>
+                                <h4 class="card-title">Net Profit</h4>
+                                <h2>@CurrencyHelper.FormatNumber(dashboardData.NetProfit)</h2>
+                            </div>
+                            <div class="align-self-center">
+                                <i class="fas fa-chart-line fa-2x"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card bg-warning text-white">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between">
+                            <div>
+                                <h4 class="card-title">Total Customers</h4>
+                                <h2>@dashboardData.TotalCustomers</h2>
+                            </div>
+                            <div class="align-self-center">
+                                <i class="fas fa-users fa-2x"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Quick Actions - All Reports -->
+        <div class="row">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0">
+                            <i class="fas fa-tachometer-alt me-2"></i>
+                            Quick Actions - Reports
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-3">
+                            <!-- Trial Balance -->
+                            <div class="col-lg-4 col-md-6">
+                                <a href="/reports/trial-balance" class="report-card-link">
+                                    <div class="report-card bg-primary text-white">
+                                        <div class="report-card-icon">
+                                            <i class="fas fa-file-alt fa-2x"></i>
+                                        </div>
+                                        <div class="report-card-content">
+                                            <h6 class="report-card-title">Trial Balance</h6>
+                                            <p class="report-card-description">View account balances and totals</p>
+                                        </div>
+                                    </div>
+                                </a>
+                            </div>
+
+
+                            <!-- 3 Trial Balance -->
+                            <div class="col-lg-4 col-md-6">
+                                <a href="/reports/three-trial-balance" class="report-card-link">
+                                    <div class="report-card bg-info text-white">
+                                        <div class="report-card-icon">
+                                            <i class="fas fa-file-text fa-2x"></i>
+                                        </div>
+                                        <div class="report-card-content">
+                                            <h6 class="report-card-title">3 Trial Balance</h6>
+                                            <p class="report-card-description">Three-column trial balance report</p>
+                                        </div>
+                                    </div>
+                                </a>
+                            </div>
+
+                            <!-- Monthly Account Balance -->
+                            <div class="col-lg-4 col-md-6">
+                                <a href="/reports/monthly-account-balance" class="report-card-link">
+                                    <div class="report-card bg-warning text-white">
+                                        <div class="report-card-icon">
+                                            <i class="fas fa-calendar-alt fa-2x"></i>
+                                        </div>
+                                        <div class="report-card-content">
+                                            <h6 class="report-card-title">Month Wise Report</h6>
+                                            <p class="report-card-description">Monthly account balance summary</p>
+                                        </div>
+                                    </div>
+                                </a>
+                            </div>
+
+                            <!-- Ledger Report -->
+                            <div class="col-lg-4 col-md-6">
+                                <a href="/reports/ledger" class="report-card-link">
+                                    <div class="report-card bg-danger text-white">
+                                        <div class="report-card-icon">
+                                            <i class="fas fa-journal-whills fa-2x"></i>
+                                        </div>
+                                        <div class="report-card-content">
+                                            <h6 class="report-card-title">Ledger Report</h6>
+                                            <p class="report-card-description">Detailed ledger transactions</p>
+                                        </div>
+                                    </div>
+                                </a>
+                            </div>
+
+
+                            <!-- Cash Book -->
+                            <div class="col-lg-4 col-md-6">
+                                <a href="/reports/cash-book" class="report-card-link">
+                                    <div class="report-card bg-dark text-white">
+                                        <div class="report-card-icon">
+                                            <i class="fas fa-book-open fa-2x"></i>
+                                        </div>
+                                        <div class="report-card-content">
+                                            <h6 class="report-card-title">Cash Book</h6>
+                                            <p class="report-card-description">Track cash receipts and payments</p>
+                                        </div>
+                                    </div>
+                                </a>
+                            </div>
+
+                            <!-- Journal Book -->
+                            <div class="col-lg-4 col-md-6">
+                                <a href="/reports/journal-book" class="report-card-link">
+                                    <div class="report-card bg-secondary text-white">
+                                        <div class="report-card-icon">
+                                            <i class="fas fa-journal-whills fa-2x"></i>
+                                        </div>
+                                        <div class="report-card-content">
+                                            <h6 class="report-card-title">Journal Book</h6>
+                                            <p class="report-card-description">View journal voucher entries</p>
+                                        </div>
+                                    </div>
+                                </a>
+                            </div>
+
+                            <!-- Transaction Journal -->
+                            <div class="col-lg-4 col-md-6">
+                                <a href="/reports/transaction-journal" class="report-card-link">
+                                    <div class="report-card bg-success text-white">
+                                        <div class="report-card-icon">
+                                            <i class="fas fa-receipt fa-2x"></i>
+                                        </div>
+                                        <div class="report-card-content">
+                                            <h6 class="report-card-title">Transaction Journal</h6>
+                                            <p class="report-card-description">Daily transaction report with selected vouchers</p>
+                                        </div>
+                                    </div>
+                                </a>
+                            </div>
+
+                            <!-- Customer Aging -->
+                            <div class="col-lg-4 col-md-6">
+                                <a href="/reports/customer-aging" class="report-card-link">
+                                    <div class="report-card bg-primary text-white" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;">
+                                        <div class="report-card-icon">
+                                            <i class="fas fa-user-clock fa-2x"></i>
+                                        </div>
+                                        <div class="report-card-content">
+                                            <h6 class="report-card-title">Customer Aging</h6>
+                                            <p class="report-card-description">Analyze customer payment status and aging</p>
+                                        </div>
+                                    </div>
+                                </a>
+                            </div>
+
+                            <!-- Supplier Aging -->
+                            <div class="col-lg-4 col-md-6">
+                                <a href="/reports/supplier-aging" class="report-card-link">
+                                    <div class="report-card bg-info text-white" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%) !important;">
+                                        <div class="report-card-icon">
+                                            <i class="fas fa-truck fa-2x"></i>
+                                        </div>
+                                        <div class="report-card-content">
+                                            <h6 class="report-card-title">Supplier Aging</h6>
+                                            <p class="report-card-description">Track supplier payment obligations and aging</p>
+                                        </div>
+                                    </div>
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private bool isLoading = true;
+    private bool connectionError = false;
+    private ClientDashboardData dashboardData = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadDashboardData();
+    }
+
+    private async Task LoadDashboardData()
+    {
+        isLoading = true;
+        connectionError = false;
+        StateHasChanged();
+
+        try
+        {
+            // Get dashboard data from the API
+            var response = await DataService.GetDashboardDataAsync();
+            if (response != null)
+            {
+                dashboardData = response;
+            }
+            
+            // Check if we got empty data (likely connection issue)
+            if (dashboardData.TotalSales == 0 && dashboardData.TotalPurchases == 0 && 
+                dashboardData.TotalCustomers == 0 && dashboardData.TotalItems == 0)
+            {
+                connectionError = true;
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading dashboard data: {ex.Message}");
+            connectionError = true;
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task TestConnection()
+    {
+        try
+        {
+            var isConnected = await DataService.TestClientConnectionAsync();
+            if (isConnected)
+            {
+                connectionError = false;
+                await LoadDashboardData();
+            }
+            else
+            {
+                connectionError = true;
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error testing connection: {ex.Message}");
+            connectionError = true;
+        }
+        StateHasChanged();
+    }
+
+}

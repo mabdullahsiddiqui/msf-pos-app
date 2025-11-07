@@ -1,0 +1,565 @@
+@page "/customers"
+@using pos_app.Client.Services
+@using pos_app.Client.Models
+@inject DataService DataService
+@inject IJSRuntime JSRuntime
+
+<PageTitle>Customer Management - FlourDb</PageTitle>
+
+<div class="container-fluid">
+    <!-- Header Section -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <h2 class="mb-1">
+                        <i class="fas fa-users me-2 text-primary"></i>
+                        Customer Management
+                    </h2>
+                    <p class="text-muted mb-0">Manage customers from FlourDb database</p>
+                </div>
+                <div class="d-flex gap-2">
+                    <button class="btn btn-outline-primary" @onclick="RefreshData" disabled="@isLoading">
+                        <i class="fas fa-sync-alt me-1 @(isLoading ? "fa-spin" : "")"></i>
+                        Refresh
+                    </button>
+                    <button class="btn btn-primary" @onclick="ExportToCsv">
+                        <i class="fas fa-download me-1"></i>
+                        Export CSV
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    @if (isLoading)
+    {
+        <div class="text-center py-5">
+            <div class="spinner-border text-primary" role="status" style="width: 3rem; height: 3rem;">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <p class="mt-3 text-muted">Loading customers from FlourDb...</p>
+        </div>
+    }
+    else if (connectionError)
+    {
+        <div class="alert alert-danger">
+            <div class="d-flex align-items-center">
+                <i class="fas fa-exclamation-triangle me-3 fa-2x"></i>
+                <div>
+                    <h5 class="alert-heading mb-1">Connection Error</h5>
+                    <p class="mb-2">Unable to connect to FlourDb. Please check your database connection settings.</p>
+                    <button class="btn btn-sm btn-outline-danger" @onclick="TestConnection">
+                        <i class="fas fa-sync-alt me-1"></i>
+                        Test Connection
+                    </button>
+                </div>
+            </div>
+        </div>
+    }
+    else
+    {
+        <!-- Search and Filter Section -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-body">
+                        <div class="row g-3">
+                            <div class="col-md-4">
+                                <label class="form-label">Search Customers</label>
+                                <div class="input-group">
+                                    <span class="input-group-text">
+                                        <i class="fas fa-search"></i>
+                                    </span>
+                                    <input type="text" class="form-control" placeholder="Search by name, code, or phone..." 
+                                           @bind="searchTerm" @oninput="OnSearchChanged" />
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">Account Type</label>
+                                <select class="form-select" value="@selectedAccountType" @onchange="OnAccountTypeChanged">
+                                    <option value="">All Types</option>
+                                    <option value="A">Type A</option>
+                                    <option value="B">Type B</option>
+                                    <option value="C">Type C</option>
+                                </select>
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">Items per page</label>
+                                <select class="form-select" value="@pageSize" @onchange="OnPageSizeChanged">
+                                    <option value="10">10</option>
+                                    <option value="25">25</option>
+                                    <option value="50">50</option>
+                                    <option value="100">100</option>
+                                </select>
+                            </div>
+                            <div class="col-md-2">
+                                <label class="form-label">&nbsp;</label>
+                                <div class="d-grid">
+                                    <button class="btn btn-outline-secondary" @onclick="ClearFilters">
+                                        <i class="fas fa-times me-1"></i>
+                                        Clear
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Statistics Cards -->
+        <div class="row mb-4">
+            <div class="col-md-3">
+                <div class="card bg-primary text-white">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between">
+                            <div>
+                                <h6 class="card-title text-uppercase">Total Customers</h6>
+                                <h3 class="mb-0">@allCustomers.Count</h3>
+                            </div>
+                            <div class="align-self-center">
+                                <i class="fas fa-users fa-2x opacity-75"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card bg-success text-white">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between">
+                            <div>
+                                <h6 class="card-title text-uppercase">Filtered Results</h6>
+                                <h3 class="mb-0">@filteredCustomers.Count</h3>
+                            </div>
+                            <div class="align-self-center">
+                                <i class="fas fa-filter fa-2x opacity-75"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card bg-info text-white">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between">
+                            <div>
+                                <h6 class="card-title text-uppercase">Current Page</h6>
+                                <h3 class="mb-0">@currentPage of @totalPages</h3>
+                            </div>
+                            <div class="align-self-center">
+                                <i class="fas fa-file-alt fa-2x opacity-75"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card bg-warning text-white">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between">
+                            <div>
+                                <h6 class="card-title text-uppercase">Showing</h6>
+                                <h3 class="mb-0">@pagedCustomers.Count</h3>
+                            </div>
+                            <div class="align-self-center">
+                                <i class="fas fa-eye fa-2x opacity-75"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Data Table -->
+        <div class="row">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0">
+                            <i class="fas fa-table me-2"></i>
+                            Customer Data
+                        </h5>
+                        <div class="d-flex align-items-center gap-2">
+                            <span class="badge bg-primary">@pagedCustomers.Count of @filteredCustomers.Count customers</span>
+                        </div>
+                    </div>
+                    <div class="card-body p-0">
+                        <div class="table-responsive">
+                            <table class="table table-hover mb-0">
+                                <thead class="table-dark">
+                                    <tr>
+                                        <th class="sortable" @onclick="() => SortBy(nameof(ClientCustomer.AccCode))">
+                                            Account Code
+                                            <i class="fas fa-sort ms-1 @GetSortIcon(nameof(ClientCustomer.AccCode))"></i>
+                                        </th>
+                                        <th class="sortable" @onclick="() => SortBy(nameof(ClientCustomer.AccName))">
+                                            Account Name
+                                            <i class="fas fa-sort ms-1 @GetSortIcon(nameof(ClientCustomer.AccName))"></i>
+                                        </th>
+                                        <th class="sortable" @onclick="() => SortBy(nameof(ClientCustomer.AccType))">
+                                            Type
+                                            <i class="fas fa-sort ms-1 @GetSortIcon(nameof(ClientCustomer.AccType))"></i>
+                                        </th>
+                                        <th class="sortable" @onclick="() => SortBy(nameof(ClientCustomer.CellNo))">
+                                            Cell Number
+                                            <i class="fas fa-sort ms-1 @GetSortIcon(nameof(ClientCustomer.CellNo))"></i>
+                                        </th>
+                                        <th class="sortable" @onclick="() => SortBy(nameof(ClientCustomer.Address))">
+                                            Address
+                                            <i class="fas fa-sort ms-1 @GetSortIcon(nameof(ClientCustomer.Address))"></i>
+                                        </th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var customer in pagedCustomers)
+                                    {
+                                        <tr>
+                                            <td>
+                                                <code class="text-primary">@customer.AccCode</code>
+                                            </td>
+                                            <td>
+                                                <div class="fw-medium">@customer.AccName</div>
+                                                @if (!string.IsNullOrEmpty(customer.ContPers))
+                                                {
+                                                    <small class="text-muted">Contact: @customer.ContPers</small>
+                                                }
+                                            </td>
+                                            <td>
+                                                <span class="badge bg-secondary">@customer.AccType</span>
+                                            </td>
+                                            <td>
+                                                @if (!string.IsNullOrEmpty(customer.CellNo) && customer.CellNo.Trim() != "")
+                                                {
+                                                    <a href="tel:@customer.CellNo" class="text-decoration-none">
+                                                        <i class="fas fa-phone me-1"></i>@customer.CellNo
+                                                    </a>
+                                                }
+                                                else
+                                                {
+                                                    <span class="text-muted">No number</span>
+                                                }
+                                            </td>
+                                            <td>
+                                                <div class="text-truncate" style="max-width: 200px;" title="@customer.Address">
+                                                    @if (string.IsNullOrEmpty(customer.Address) || customer.Address.Trim() == "")
+                                                    {
+                                                        <span class="text-muted">No address</span>
+                                                    }
+                                                    else
+                                                    {
+                                                        @customer.Address
+                                                    }
+                                                </div>
+                                            </td>
+                                            <td>
+                                                <div class="btn-group btn-group-sm" role="group">
+                                                    <button class="btn btn-outline-primary" @onclick="() => ViewCustomer(customer)" title="View Details">
+                                                        <i class="fas fa-eye"></i>
+                                                    </button>
+                                                    <button class="btn btn-outline-secondary" @onclick="() => EditCustomer(customer)" title="Edit">
+                                                        <i class="fas fa-edit"></i>
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                        
+                        @if (pagedCustomers.Count == 0)
+                        {
+                            <div class="text-center py-5">
+                                <i class="fas fa-search fa-3x text-muted mb-3"></i>
+                                <h5 class="text-muted">No customers found</h5>
+                                <p class="text-muted">
+                                    @if (string.IsNullOrEmpty(searchTerm) && string.IsNullOrEmpty(selectedAccountType))
+                                    {
+                                        <span>The customer table appears to be empty or there was an issue loading the data.</span>
+                                    }
+                                    else
+                                    {
+                                        <span>No customers match your current search criteria. Try adjusting your filters.</span>
+                                    }
+                                </p>
+                                @if (!string.IsNullOrEmpty(searchTerm) || !string.IsNullOrEmpty(selectedAccountType))
+                                {
+                                    <button class="btn btn-outline-primary" @onclick="ClearFilters">
+                                        <i class="fas fa-times me-1"></i>
+                                        Clear Filters
+                                    </button>
+                                }
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Pagination -->
+        @if (totalPages > 1)
+        {
+            <div class="row mt-4">
+                <div class="col-12">
+                    <nav aria-label="Customer pagination">
+                        <ul class="pagination justify-content-center">
+                            <li class="page-item @(currentPage == 1 ? "disabled" : "")">
+                                <button class="page-link" @onclick="() => GoToPage(1)" disabled="@(currentPage == 1)">
+                                    <i class="fas fa-angle-double-left"></i>
+                                </button>
+                            </li>
+                            <li class="page-item @(currentPage == 1 ? "disabled" : "")">
+                                <button class="page-link" @onclick="() => GoToPage(currentPage - 1)" disabled="@(currentPage == 1)">
+                                    <i class="fas fa-angle-left"></i>
+                                </button>
+                            </li>
+                            
+                            @for (int i = Math.Max(1, currentPage - 2); i <= Math.Min(totalPages, currentPage + 2); i++)
+                            {
+                                <li class="page-item @(i == currentPage ? "active" : "")">
+                                    <button class="page-link" @onclick="() => GoToPage(i)">@i</button>
+                                </li>
+                            }
+                            
+                            <li class="page-item @(currentPage == totalPages ? "disabled" : "")">
+                                <button class="page-link" @onclick="() => GoToPage(currentPage + 1)" disabled="@(currentPage == totalPages)">
+                                    <i class="fas fa-angle-right"></i>
+                                </button>
+                            </li>
+                            <li class="page-item @(currentPage == totalPages ? "disabled" : "")">
+                                <button class="page-link" @onclick="() => GoToPage(totalPages)" disabled="@(currentPage == totalPages)">
+                                    <i class="fas fa-angle-double-right"></i>
+                                </button>
+                            </li>
+                        </ul>
+                    </nav>
+                </div>
+            </div>
+        }
+    }
+</div>
+
+@code {
+    private bool isLoading = true;
+    private bool connectionError = false;
+    private List<ClientCustomer> allCustomers = new();
+    private List<ClientCustomer> filteredCustomers = new();
+    private List<ClientCustomer> pagedCustomers = new();
+    
+    // Search and filter properties
+    private string searchTerm = "";
+    private string selectedAccountType = "";
+    private int pageSize = 25;
+    private int currentPage = 1;
+    private int totalPages = 0;
+    
+    // Sorting properties
+    private string sortColumn = nameof(ClientCustomer.AccCode);
+    private bool sortAscending = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadCustomers();
+    }
+
+    private async Task LoadCustomers()
+    {
+        isLoading = true;
+        connectionError = false;
+        StateHasChanged();
+
+        try
+        {
+            // Get customer data from the API
+            allCustomers = await DataService.GetCustomersAsync();
+            
+            if (allCustomers == null)
+            {
+                allCustomers = new List<ClientCustomer>();
+            }
+            
+            ApplyFilters();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading customers: {ex.Message}");
+            connectionError = true;
+            allCustomers = new List<ClientCustomer>();
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void ApplyFilters()
+    {
+        var filtered = allCustomers.AsEnumerable();
+
+        // Apply search filter
+        if (!string.IsNullOrEmpty(searchTerm))
+        {
+            var searchLower = searchTerm.ToLower();
+            filtered = filtered.Where(c => 
+                c.AccName.ToLower().Contains(searchLower) ||
+                c.AccCode.ToLower().Contains(searchLower) ||
+                c.CellNo.ToLower().Contains(searchLower) ||
+                (c.Address != null && c.Address.ToLower().Contains(searchLower))
+            );
+        }
+
+        // Apply account type filter
+        if (!string.IsNullOrEmpty(selectedAccountType))
+        {
+            filtered = filtered.Where(c => c.AccType == selectedAccountType);
+        }
+
+        // Apply sorting
+        filteredCustomers = ApplySorting(filtered).ToList();
+
+        // Calculate pagination
+        totalPages = (int)Math.Ceiling((double)filteredCustomers.Count / pageSize);
+        currentPage = Math.Max(1, Math.Min(currentPage, totalPages));
+
+        // Apply pagination
+        pagedCustomers = filteredCustomers
+            .Skip((currentPage - 1) * pageSize)
+            .Take(pageSize)
+            .ToList();
+    }
+
+    private IEnumerable<ClientCustomer> ApplySorting(IEnumerable<ClientCustomer> customers)
+    {
+        return sortColumn switch
+        {
+            nameof(ClientCustomer.AccCode) => sortAscending ? 
+                customers.OrderBy(c => c.AccCode) : customers.OrderByDescending(c => c.AccCode),
+            nameof(ClientCustomer.AccName) => sortAscending ? 
+                customers.OrderBy(c => c.AccName) : customers.OrderByDescending(c => c.AccName),
+            nameof(ClientCustomer.AccType) => sortAscending ? 
+                customers.OrderBy(c => c.AccType) : customers.OrderByDescending(c => c.AccType),
+            nameof(ClientCustomer.CellNo) => sortAscending ? 
+                customers.OrderBy(c => c.CellNo) : customers.OrderByDescending(c => c.CellNo),
+            nameof(ClientCustomer.Address) => sortAscending ? 
+                customers.OrderBy(c => c.Address) : customers.OrderByDescending(c => c.Address),
+            _ => customers
+        };
+    }
+
+    private void SortBy(string column)
+    {
+        if (sortColumn == column)
+        {
+            sortAscending = !sortAscending;
+        }
+        else
+        {
+            sortColumn = column;
+            sortAscending = true;
+        }
+        ApplyFilters();
+    }
+
+    private string GetSortIcon(string column)
+    {
+        if (sortColumn != column) return "text-muted";
+        return sortAscending ? "fa-sort-up text-primary" : "fa-sort-down text-primary";
+    }
+
+    private void OnSearchChanged(ChangeEventArgs e)
+    {
+        searchTerm = e.Value?.ToString() ?? "";
+        currentPage = 1;
+        ApplyFilters();
+    }
+
+    private void OnAccountTypeChanged(ChangeEventArgs e)
+    {
+        selectedAccountType = e.Value?.ToString() ?? "";
+        currentPage = 1;
+        ApplyFilters();
+    }
+
+    private void OnPageSizeChanged(ChangeEventArgs e)
+    {
+        pageSize = int.Parse(e.Value?.ToString() ?? "25");
+        currentPage = 1;
+        ApplyFilters();
+    }
+
+    private void GoToPage(int page)
+    {
+        currentPage = page;
+        ApplyFilters();
+    }
+
+    private void ClearFilters()
+    {
+        searchTerm = "";
+        selectedAccountType = "";
+        currentPage = 1;
+        ApplyFilters();
+    }
+
+    private void ViewCustomer(ClientCustomer customer)
+    {
+        // TODO: Implement customer details modal or page
+        Console.WriteLine($"Viewing customer: {customer.AccName}");
+    }
+
+    private void EditCustomer(ClientCustomer customer)
+    {
+        // TODO: Implement customer edit modal or page
+        Console.WriteLine($"Editing customer: {customer.AccName}");
+    }
+
+    private async Task ExportToCsv()
+    {
+        try
+        {
+            var csv = "Account Code,Account Name,Account Type,Cell Number,Address,Contact Person\n";
+            foreach (var customer in filteredCustomers)
+            {
+                csv += $"\"{customer.AccCode}\",\"{customer.AccName}\",\"{customer.AccType}\",\"{customer.CellNo}\",\"{customer.Address}\",\"{customer.ContPers}\"\n";
+            }
+            
+            await JSRuntime.InvokeVoidAsync("downloadFile", "customers.csv", csv, "text/csv");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error exporting CSV: {ex.Message}");
+        }
+    }
+
+    private async Task TestConnection()
+    {
+        try
+        {
+            var isConnected = await DataService.TestClientConnectionAsync();
+            if (isConnected)
+            {
+                connectionError = false;
+                await LoadCustomers();
+            }
+            else
+            {
+                connectionError = true;
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error testing connection: {ex.Message}");
+            connectionError = true;
+        }
+        StateHasChanged();
+    }
+
+    private async Task RefreshData()
+    {
+        await LoadCustomers();
+    }
+}

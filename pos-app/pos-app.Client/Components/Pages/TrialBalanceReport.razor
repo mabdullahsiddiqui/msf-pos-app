@@ -1,0 +1,586 @@
+@page "/reports/trial-balance"
+@using pos_app.Client.Services
+@using pos_app.Client.Models
+@using pos_app.Client.Components.Shared
+@inject DataService DataService
+@inject IJSRuntime JSRuntime
+
+<PageTitle>Trial Balance Report - POS System</PageTitle>
+
+<style>
+    /* Override accordion arrow color for primary background */
+    .accordion-button.bg-primary::after {
+        filter: brightness(0) invert(1);
+    }
+</style>
+
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+
+            <!-- Date Filter -->
+            <FilterCard Title="Report Filters" IconClass="fas fa-calendar-alt">
+                <div class="row">
+                    <DateInput Label="As of Date:" Id="asOfDate" @bind-Value="asOfDate" />
+                    <div class="col-md-4">
+                        <label for="searchAccName" class="form-label">AC Name:</label>
+                        <SearchInput Id="searchAccName" Placeholder="Search AC Name..." @bind-Value="searchAccName" />
+                    </div>
+                    <div class="col-md-2 d-flex align-items-end">
+                        <ActionButton Text="Generate Report" IconClass="bi bi-search" OnClick="LoadTrialBalance" />
+                    </div>
+                </div>
+            </FilterCard>
+
+            <!-- Loading Indicator -->
+            @if (isLoading)
+            {
+                <LoadingSpinner Message="Generating trial balance report..." />
+            }
+
+            <!-- Error Message -->
+            <ErrorAlert Message="@errorMessage" IconClass="bi bi-exclamation-triangle" />
+
+            <!-- Trial Balance Table -->
+            @if (trialBalanceData != null && trialBalanceData.Success)
+            {
+                <ReportTable>
+                    <HeaderContent>
+                        <div class="d-flex justify-content-between align-items-center">
+                            <ReportTitleHeader Title="@GetTrialBalanceTitle()" IconClass="bi bi-table" />
+                            <div class="d-flex gap-2">
+                                <button class="btn btn-outline-secondary btn-sm" @onclick="CollapseAll">
+                                    ⬇️ Collapse All
+                                </button>
+                                <button class="btn btn-outline-secondary btn-sm" @onclick="ExpandAll">
+                                    ⬆️ Expand All
+                                </button>
+                            </div>
+                        </div>
+                    </HeaderContent>
+                    
+            <SummaryCards>
+                <SummaryCard Title="Total Debit" Value="@CurrencyHelper.FormatNumber(trialBalanceData.TotalDebit)" BgColor="danger" />
+                <SummaryCard Title="Total Credit" Value="@CurrencyHelper.FormatNumber(trialBalanceData.TotalCredit)" BgColor="success" />
+                <SummaryCard Title="Balance Status" Value="@(trialBalanceData.TotalDebit == trialBalanceData.TotalCredit ? "BALANCED" : "UNBALANCED")" BgColor="@(trialBalanceData.TotalDebit == trialBalanceData.TotalCredit ? "success" : "warning")" />
+                <SummaryCard Title="Processing Time" Value="@($"{trialBalanceData.ProcessingTimeMs} ms")" BgColor="info" />
+            </SummaryCards>
+
+                    <BodyContent>
+                        <div class="card">
+                            <div class="card-body p-3">
+                        @{
+                            var firstTyreAccounts = trialBalanceData.Data.Where(a => 
+                                long.TryParse(a.AccCode.Replace("-", ""), out var num) && num % 100000000 == 0).ToList();
+                            
+                            foreach (var firstTyre in firstTyreAccounts.Where(f => ShouldShowAccount(f.AccCode)))
+                            {
+                                var firstTyreId = firstTyre.AccCode.Replace("-", "");
+                                var firstTyreNum = long.Parse(firstTyreId);
+                                var secondTyreAccounts = trialBalanceData.Data.Where(a =>
+                                {
+                                    if (!long.TryParse(a.AccCode.Replace("-", ""), out var num)) return false;
+                                    return num >= firstTyreNum && num < firstTyreNum + 100000000 &&
+                                           num % 1000000 == 0 && num % 100000000 != 0;
+                                }).ToList();
+
+                                <!-- 1st Tyre Accordion -->
+                                <div class="accordion mb-3" id="accordion_@firstTyreId">
+                                    <div class="accordion-item">
+                                        <h2 class="accordion-header bg-primary" id="heading_@firstTyreId">
+                                            <div class="d-flex w-100 align-items-center">
+                                                <button class="accordion-button bg-primary text-white fw-bold flex-grow-1" type="button" 
+                                                        @onclick="() => ToggleCollapse(firstTyre.AccCode)"
+                                                        aria-expanded="@IsExpanded(firstTyre.AccCode).ToString().ToLower()">
+                                                    <span class="me-3">@firstTyre.AccCode</span>
+                                                    <span class="me-auto">@firstTyre.AccName</span>
+                                                    @{
+                                                        var netBalance1 = firstTyre.Debit - firstTyre.Credit;
+                                                        if (netBalance1 > 0)
+                                                        {
+                                                            <span class="badge bg-danger ms-2">Dr: @CurrencyHelper.FormatNumber(netBalance1)</span>
+                                                        }
+                                                        else if (netBalance1 < 0)
+                                                        {
+                                                            <span class="badge bg-success ms-2">Cr: @CurrencyHelper.FormatNumber(Math.Abs(netBalance1))</span>
+                                                        }
+                                                    }
+                                                </button>
+                                                @if (IsExpanded(firstTyre.AccCode))
+                                                {
+                                                    <button class="btn btn-sm btn-outline-light ms-2 me-2" 
+                                                            @onclick="() => ToggleFirstTyreChildren(firstTyre.AccCode)"
+                                                            @onclick:stopPropagation="true"
+                                                            title="Toggle all child accounts">
+                                                        @(AreFirstTyreChildrenExpanded(firstTyre.AccCode) ? "⬆️" : "⬇️")
+                                                    </button>
+                                                }
+                                            </div>
+                                        </h2>
+                                        <div id="collapse_@firstTyreId" class="accordion-collapse @(IsExpanded(firstTyre.AccCode) ? "collapse show" : "collapse")" 
+                                             aria-labelledby="heading_@firstTyreId">
+                                            <div class="accordion-body p-2">
+                                                @foreach (var secondTyre in secondTyreAccounts.Where(s => ShouldShowAccount(s.AccCode)))
+                                                {
+                                                    var secondTyreId = secondTyre.AccCode.Replace("-", "");
+                                                    var secondTyreNum = long.Parse(secondTyreId);
+                                                    var thirdTyreAccounts = trialBalanceData.Data.Where(a =>
+                                                    {
+                                                        if (!long.TryParse(a.AccCode.Replace("-", ""), out var num)) return false;
+                                                        return num >= secondTyreNum && num < secondTyreNum + 1000000 &&
+                                                               num % 10000 == 0 && num % 1000000 != 0;
+                                                    }).ToList();
+
+                                                    <!-- 2nd Tyre Accordion -->
+                                                    <div class="accordion mb-2" id="accordion_@secondTyreId">
+                                                        <div class="accordion-item" style="border-left: 4px solid #0d6efd;">
+                                                            <h2 class="accordion-header bg-info" id="heading_@secondTyreId">
+                                                                <div class="d-flex w-100 align-items-center">
+                                                                    <button class="accordion-button bg-info bg-opacity-25 fw-bold flex-grow-1" type="button" 
+                                                                            @onclick="() => ToggleCollapse(secondTyre.AccCode)"
+                                                                            aria-expanded="@IsExpanded(secondTyre.AccCode).ToString().ToLower()">
+                                                                        <span class="me-3 ms-2">@secondTyre.AccCode</span>
+                                                                        <span class="me-auto">@secondTyre.AccName</span>
+                                                                        @{
+                                                                            var netBalance2 = secondTyre.Debit - secondTyre.Credit;
+                                                                            if (netBalance2 > 0)
+                                                                            {
+                                                                                <span class="badge bg-danger ms-2">Dr: @CurrencyHelper.FormatNumber(netBalance2)</span>
+                                                                            }
+                                                                            else if (netBalance2 < 0)
+                                                                            {
+                                                                                <span class="badge bg-success ms-2">Cr: @CurrencyHelper.FormatNumber(Math.Abs(netBalance2))</span>
+                                                                            }
+                                                                        }
+                                                                    </button>
+                                                                    @if (IsExpanded(secondTyre.AccCode))
+                                                                    {
+                                                                        <button class="btn btn-sm btn-outline-light ms-2 me-2" 
+                                                                                @onclick="() => ToggleSecondTyreChildren(secondTyre.AccCode)"
+                                                                                @onclick:stopPropagation="true"
+                                                                                title="Toggle all child accounts">
+                                                                            @(AreSecondTyreChildrenExpanded(secondTyre.AccCode) ? "⬆️" : "⬇️")
+                                                                        </button>
+                                                                    }
+                                                                </div>
+                                                            </h2>
+                                                            <div id="collapse_@secondTyreId" class="accordion-collapse @(IsExpanded(secondTyre.AccCode) ? "collapse show" : "collapse")" 
+                                                                 aria-labelledby="heading_@secondTyreId">
+                                                                <div class="accordion-body p-2">
+                                                                    @foreach (var thirdTyre in thirdTyreAccounts.Where(t => ShouldShowAccount(t.AccCode)))
+                                                                    {
+                                                                        var thirdTyreId = thirdTyre.AccCode.Replace("-", "");
+                                                                        var thirdTyreNum = long.Parse(thirdTyreId);
+                                                                        var fourthTyreAccounts = trialBalanceData.Data.Where(a =>
+                                                                        {
+                                                                            if (!long.TryParse(a.AccCode.Replace("-", ""), out var num)) return false;
+                                                                            return num >= thirdTyreNum && num < thirdTyreNum + 10000 && num % 10000 != 0;
+                                                                        }).ToList();
+
+                                                                        <!-- 3rd Tyre Accordion -->
+                                                                        <div class="accordion mb-2" id="accordion_@thirdTyreId">
+                                                                            <div class="accordion-item" style="border-left: 3px solid #0dcaf0;">
+                                                                                <h2 class="accordion-header bg-light" id="heading_@thirdTyreId">
+                                                                                    <button class="accordion-button bg-light" type="button" 
+                                                                                            @onclick="() => ToggleCollapse(thirdTyre.AccCode)"
+                                                                                            aria-expanded="@IsExpanded(thirdTyre.AccCode).ToString().ToLower()">
+                                                                                        <span class="me-3 ms-3">@thirdTyre.AccCode</span>
+                                                                                        <span class="me-auto">@thirdTyre.AccName</span>
+                                                                                        @{
+                                                                                            var netBalance3 = thirdTyre.Debit - thirdTyre.Credit;
+                                                                                            if (netBalance3 > 0)
+                                                                                            {
+                                                                                                <span class="badge bg-danger ms-2">Dr: @CurrencyHelper.FormatNumber(netBalance3)</span>
+                                                                                            }
+                                                                                            else if (netBalance3 < 0)
+                                                                                            {
+                                                                                                <span class="badge bg-success ms-2">Cr: @CurrencyHelper.FormatNumber(Math.Abs(netBalance3))</span>
+                                                                                            }
+                                                                                        }
+                                                                                    </button>
+                                                                                </h2>
+                                                                                <div id="collapse_@thirdTyreId" class="accordion-collapse @(IsExpanded(thirdTyre.AccCode) ? "collapse show" : "collapse")" 
+                                                                                     aria-labelledby="heading_@thirdTyreId">
+                                                                                    <div class="accordion-body p-2">
+                                                                                        @if (fourthTyreAccounts.Any())
+                                                                                        {
+                                                                                            <!-- 4th Tyre - Simple Table (Not Accordion) -->
+                                                                                            <table class="table table-sm table-hover mb-0">
+                                                                                                <thead class="table-secondary">
+                                                                                                    <tr>
+                                                                                                        <th class="ps-4">A/C Code</th>
+                                        <th>A/C Name</th>
+                                        <th class="text-end">Debit</th>
+                                        <th class="text-end">Credit</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                                                                                    @foreach (var fourthTyre in fourthTyreAccounts.Where(f => MatchesSearch(f)))
+                                    {
+                                        <tr>
+                                                                                                            <td class="ps-4"><strong>@fourthTyre.AccCode</strong></td>
+                                                                                                            <td>@fourthTyre.AccName</td>
+                                            <td class="text-end">
+                                                                                                                @if (fourthTyre.Debit > 0)
+                                                {
+                                                                                                                    <span class="text-danger fw-bold">@CurrencyHelper.FormatNumber(fourthTyre.Debit)</span>
+                                                }
+                                                else
+                                                {
+                                                    <span class="text-muted">-</span>
+                                                }
+                                            </td>
+                                            <td class="text-end">
+                                                                                                                @if (fourthTyre.Credit > 0)
+                                                {
+                                                                                                                    <span class="text-success fw-bold">@CurrencyHelper.FormatNumber(fourthTyre.Credit)</span>
+                                                }
+                                                else
+                                                {
+                                                    <span class="text-muted">-</span>
+                                                }
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                                                                                        }
+                                                                                    </div>
+                                                                                </div>
+                                                                            </div>
+                                                                        </div>
+                                                                    }
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                }
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            }
+                        }
+                            </div>
+                        </div>
+                    </BodyContent>
+
+                    <FooterContent>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <strong>Total Debit: @CurrencyHelper.FormatNumber(trialBalanceData.TotalDebit)</strong>
+                            </div>
+                            <div class="col-md-6">
+                                <strong>Total Credit: @CurrencyHelper.FormatNumber(trialBalanceData.TotalCredit)</strong>
+                            </div>
+                        </div>
+                        <div class="row mt-2">
+                            <div class="col-12">
+                                <strong>Balance Status: <span class="@(trialBalanceData.TotalDebit == trialBalanceData.TotalCredit ? "text-success" : "text-warning")">@(trialBalanceData.TotalDebit == trialBalanceData.TotalCredit ? "BALANCED" : "UNBALANCED")</span></strong>
+                            </div>
+                        </div>
+                    </FooterContent>
+                </ReportTable>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    private TrialBalanceResponse? trialBalanceData;
+    private bool isLoading = false;
+    private string errorMessage = string.Empty;
+    private DateTime asOfDate = DateTime.Now;
+    private string reportType = "csharp"; // Default to C# Logic (optimized hierarchical implementation)
+    
+    // Search state variables
+    private string searchAccName = string.Empty;
+    
+    // Accordion collapse state management
+    private Dictionary<string, bool> collapseState = new Dictionary<string, bool>();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadTrialBalance();
+    }
+
+
+    private bool MatchesSearch(TrialBalanceItem account)
+    {
+        if (string.IsNullOrWhiteSpace(searchAccName))
+            return true;
+
+        return account.AccName.Contains(searchAccName, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private bool ShouldShowAccount(string accCode)
+    {
+        if (trialBalanceData?.Data == null) return true;
+        if (string.IsNullOrWhiteSpace(searchAccName))
+            return true;
+
+        var account = trialBalanceData.Data.FirstOrDefault(a => a.AccCode == accCode);
+        if (account == null) return false;
+
+        // Check if this account matches the search
+        if (MatchesSearch(account))
+            return true;
+
+        // Check if any descendants match the search
+        return HasMatchingDescendants(accCode);
+    }
+
+    private bool HasMatchingDescendants(string parentAccCode)
+    {
+        if (trialBalanceData?.Data == null) return false;
+
+        // Parse the parent account code to determine its tier
+        if (!long.TryParse(parentAccCode.Replace("-", ""), out var parentNum))
+            return false;
+
+        // Get all accounts that could be descendants
+        var allAccounts = trialBalanceData.Data.ToList();
+
+        // Check for matching descendants based on tier
+        foreach (var account in allAccounts)
+        {
+            if (!long.TryParse(account.AccCode.Replace("-", ""), out var accNum))
+                continue;
+
+            // Check if this account is a descendant and matches search
+            if (IsDescendant(parentNum, accNum) && MatchesSearch(account))
+                return true;
+        }
+
+        return false;
+    }
+
+    private bool IsDescendant(long parentNum, long childNum)
+    {
+        // Determine parent tier and check if child belongs to it
+        if (parentNum % 100000000 == 0) // 1st tier
+        {
+            return childNum >= parentNum && childNum < parentNum + 100000000 && childNum != parentNum;
+        }
+        else if (parentNum % 1000000 == 0) // 2nd tier
+        {
+            return childNum >= parentNum && childNum < parentNum + 1000000 && childNum != parentNum;
+        }
+        else if (parentNum % 10000 == 0) // 3rd tier
+        {
+            return childNum >= parentNum && childNum < parentNum + 10000 && childNum != parentNum;
+        }
+
+        return false;
+    }
+
+    private void ToggleCollapse(string accCode)
+    {
+        if (collapseState.ContainsKey(accCode))
+            collapseState[accCode] = !collapseState[accCode];
+        else
+            collapseState[accCode] = true;
+        
+        StateHasChanged(); // Trigger re-render to update UI
+    }
+
+    private bool IsExpanded(string accCode)
+    {
+        return collapseState.GetValueOrDefault(accCode, true); // Default to expanded
+    }
+
+    private void CollapseAll()
+    {
+        foreach (var key in collapseState.Keys.ToList())
+        {
+            collapseState[key] = false; // false = collapsed
+        }
+        StateHasChanged();
+    }
+
+    private void ExpandAll()
+    {
+        foreach (var key in collapseState.Keys.ToList())
+        {
+            collapseState[key] = true; // true = expanded
+        }
+        StateHasChanged();
+    }
+
+    private void ToggleFirstTyreChildren(string firstTyreCode)
+    {
+        // Get all 2nd tyre accounts that belong to this 1st tyre
+        var firstTyreNum = long.Parse(firstTyreCode.Replace("-", ""));
+        var secondTyres = trialBalanceData.Data.Where(a =>
+        {
+            if (!long.TryParse(a.AccCode.Replace("-", ""), out var num)) return false;
+            return num >= firstTyreNum && num < firstTyreNum + 100000000 &&
+                   num % 1000000 == 0 && num % 100000000 != 0;
+        }).ToList();
+
+        // Check if all are currently expanded
+        bool allExpanded = secondTyres.All(a => IsExpanded(a.AccCode));
+        
+        // Toggle all children
+        foreach (var secondTyre in secondTyres)
+        {
+            collapseState[secondTyre.AccCode] = !allExpanded;
+        }
+        
+        StateHasChanged();
+    }
+
+    private void ToggleSecondTyreChildren(string secondTyreCode)
+    {
+        // Get all 3rd tyre accounts that belong to this 2nd tyre
+        var secondTyreNum = long.Parse(secondTyreCode.Replace("-", ""));
+        var thirdTyres = trialBalanceData.Data.Where(a =>
+        {
+            if (!long.TryParse(a.AccCode.Replace("-", ""), out var num)) return false;
+            return num >= secondTyreNum && num < secondTyreNum + 1000000 &&
+                   num % 10000 == 0 && num % 1000000 != 0;
+        }).ToList();
+
+        // Check if all are currently expanded
+        bool allExpanded = thirdTyres.All(a => IsExpanded(a.AccCode));
+        
+        // Toggle all children
+        foreach (var thirdTyre in thirdTyres)
+        {
+            collapseState[thirdTyre.AccCode] = !allExpanded;
+        }
+        
+        StateHasChanged();
+    }
+
+    private bool AreFirstTyreChildrenExpanded(string firstTyreCode)
+    {
+        var firstTyreNum = long.Parse(firstTyreCode.Replace("-", ""));
+        var secondTyres = trialBalanceData.Data.Where(a =>
+        {
+            if (!long.TryParse(a.AccCode.Replace("-", ""), out var num)) return false;
+            return num >= firstTyreNum && num < firstTyreNum + 100000000 &&
+                   num % 1000000 == 0 && num % 100000000 != 0;
+        }).ToList();
+        
+        return secondTyres.Any() && secondTyres.All(a => IsExpanded(a.AccCode));
+    }
+
+    private bool AreSecondTyreChildrenExpanded(string secondTyreCode)
+    {
+        var secondTyreNum = long.Parse(secondTyreCode.Replace("-", ""));
+        var thirdTyres = trialBalanceData.Data.Where(a =>
+        {
+            if (!long.TryParse(a.AccCode.Replace("-", ""), out var num)) return false;
+            return num >= secondTyreNum && num < secondTyreNum + 1000000 &&
+                   num % 10000 == 0 && num % 1000000 != 0;
+        }).ToList();
+        
+        return thirdTyres.Any() && thirdTyres.All(a => IsExpanded(a.AccCode));
+    }
+
+    private async Task LoadTrialBalance()
+    {
+        isLoading = true;
+        errorMessage = string.Empty;
+        StateHasChanged();
+
+        try
+        {
+            // Always use C# Logic by default (optimized LINQ-based hierarchical implementation)
+            // SQL Logic is available by changing reportType to "sql" (kept for developer comparison)
+            trialBalanceData = reportType switch
+            {
+                "csharp" => await DataService.GetTrialBalanceCSharpAsync(asOfDate),
+                "sql" => await DataService.GetTrialBalanceSqlAsync(asOfDate),
+                _ => await DataService.GetTrialBalanceCSharpAsync(asOfDate) // Default to C# Logic
+            };
+            
+            if (!trialBalanceData.Success)
+            {
+                errorMessage = trialBalanceData.Message;
+            }
+            else if (trialBalanceData?.Data != null)
+            {
+                // Initialize collapse state for all accounts
+                foreach (var account in trialBalanceData.Data)
+                {
+                    if (!collapseState.ContainsKey(account.AccCode))
+                    {
+                        collapseState[account.AccCode] = true; // Start expanded
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error loading trial balance: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task OnReportTypeChanged()
+    {
+        await LoadTrialBalance();
+    }
+
+    private string GetReportTypeDisplay()
+    {
+        return reportType switch
+        {
+            "csharp" => "Hierarchical (C# Logic)",
+            "sql" => "Hierarchical (SQL Logic)",
+            _ => "Simple Trial Balance"
+        };
+    }
+
+    private async Task ExportToCsv()
+    {
+        if (trialBalanceData?.Data == null) return;
+
+        var csvContent = "A/C Code,A/C Name,A/C Type,Debit,Credit\n";
+        
+        foreach (var item in trialBalanceData.Data)
+        {
+            csvContent += $"{item.AccCode},{item.AccName},{item.AccType},{item.Debit:N2},{item.Credit:N2}\n";
+        }
+
+        csvContent += $"TOTAL,,,{trialBalanceData.TotalDebit:N2},{trialBalanceData.TotalCredit:N2}\n";
+
+        var fileName = $"TrialBalance_{asOfDate:yyyyMMdd}.csv";
+        await JSRuntime.InvokeVoidAsync("downloadFile", fileName, csvContent, "text/csv");
+    }
+
+    private async Task ExportToExcel()
+    {
+        if (trialBalanceData?.Data == null) return;
+
+        // For now, we'll export as CSV with .xlsx extension
+        // In a real implementation, you'd use a library like EPPlus or ClosedXML
+        var csvContent = "A/C Code,A/C Name,A/C Type,Debit,Credit\n";
+        
+        foreach (var item in trialBalanceData.Data)
+        {
+            csvContent += $"{item.AccCode},{item.AccName},{item.AccType},{item.Debit:N2},{item.Credit:N2}\n";
+        }
+
+        csvContent += $"TOTAL,,,{trialBalanceData.TotalDebit:N2},{trialBalanceData.TotalCredit:N2}\n";
+
+        var fileName = $"TrialBalance_{asOfDate:yyyyMMdd}.xlsx";
+        await JSRuntime.InvokeVoidAsync("downloadFile", fileName, csvContent, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    }
+
+    private string GetTrialBalanceTitle()
+    {
+        if (trialBalanceData != null && trialBalanceData.Success)
+        {
+            return $"Trial Balance as of {trialBalanceData.AsOfDate:yyyy-MM-dd}";
+        }
+        return "Trial Balance Report";
+    }
+
+}

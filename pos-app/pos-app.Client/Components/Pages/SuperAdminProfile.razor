@@ -1,0 +1,469 @@
+@page "/superadmin/profile"
+@rendermode InteractiveWebAssembly
+@layout pos_app.Client.Components.Layout.SuperAdminMainLayout
+@using pos_app.Client.Models
+@using pos_app.Client.Services
+@inject SuperAdminService SuperAdminService
+@inject AuthenticationStateService AuthState
+@inject NavigationManager Navigation
+
+<PageTitle>Profile - Super Admin</PageTitle>
+
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h2><i class="fas fa-user-circle"></i> Profile Management</h2>
+                <button class="btn btn-outline-primary" @onclick="ToggleEditMode" disabled="@isLoading">
+                    <i class="fas @(isEditMode ? "fa-times" : "fa-edit")"></i> @(isEditMode ? "Cancel" : "Edit Profile")
+                </button>
+            </div>
+
+            @if (!string.IsNullOrEmpty(errorMessage))
+            {
+                <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                    <i class="fas fa-exclamation-triangle"></i> @errorMessage
+                    <button type="button" class="btn-close" @onclick="() => errorMessage = string.Empty"></button>
+                </div>
+            }
+
+            @if (!string.IsNullOrEmpty(successMessage))
+            {
+                <div class="alert alert-success alert-dismissible fade show" role="alert">
+                    <i class="fas fa-check-circle"></i> @successMessage
+                    <button type="button" class="btn-close" @onclick="() => successMessage = string.Empty"></button>
+                </div>
+            }
+
+            <div class="row">
+                <!-- Profile Information Section -->
+                <div class="col-lg-8">
+                    <div class="card shadow">
+                        <div class="card-header bg-primary text-white">
+                            <h5 class="mb-0"><i class="fas fa-user"></i> Profile Information</h5>
+                        </div>
+                        <div class="card-body">
+                            @if (isEditMode)
+                            {
+                                <EditForm Model="profileUpdateRequest" OnValidSubmit="UpdateProfile" FormName="superAdminProfileUpdateForm">
+                                    <DataAnnotationsValidator />
+                                    
+                                    <div class="row">
+                                        <div class="col-md-6 mb-3">
+                                            <label for="username" class="form-label">Username</label>
+                                            <InputText id="username" class="form-control" @bind-Value="profileUpdateRequest.Username" readonly="true" />
+                                            <ValidationMessage For="@(() => profileUpdateRequest.Username)" />
+                                        </div>
+                                        <div class="col-md-6 mb-3">
+                                            <label for="email" class="form-label">Email Address</label>
+                                            <InputText id="email" type="email" class="form-control" @bind-Value="profileUpdateRequest.Email" readonly="true" />
+                                            <ValidationMessage For="@(() => profileUpdateRequest.Email)" />
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="mb-3">
+                                        <label for="fullName" class="form-label">Full Name</label>
+                                        <InputText id="fullName" class="form-control" @bind-Value="profileUpdateRequest.FullName" />
+                                        <ValidationMessage For="@(() => profileUpdateRequest.FullName)" />
+                                    </div>
+
+                                    <div class="d-flex gap-2">
+                                        <button type="submit" class="btn btn-primary" disabled="@isLoading">
+                                            @if (isLoading)
+                                            {
+                                                <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                                            }
+                                            <i class="fas fa-save"></i> Save Changes
+                                        </button>
+                                        <button type="button" class="btn btn-secondary" @onclick="CancelEdit">
+                                            <i class="fas fa-times"></i> Cancel
+                                        </button>
+                                    </div>
+                                </EditForm>
+                            }
+                            else
+                            {
+                                <div class="row">
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label fw-bold">Username</label>
+                                        <p class="form-control-plaintext">@currentProfile?.Username</p>
+                                    </div>
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label fw-bold">Email Address</label>
+                                        <p class="form-control-plaintext">@currentProfile?.Email</p>
+                                    </div>
+                                </div>
+                                
+                                <div class="mb-3">
+                                    <label class="form-label fw-bold">Full Name</label>
+                                    <p class="form-control-plaintext">@currentProfile?.FullName</p>
+                                </div>
+
+                                <div class="row">
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label fw-bold">Account Created</label>
+                                        <p class="form-control-plaintext">@currentProfile?.CreatedAt.ToString("MMM dd, yyyy 'at' HH:mm")</p>
+                                    </div>
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label fw-bold">Last Login</label>
+                                        <p class="form-control-plaintext">
+                                            @if (currentProfile?.LastLoginAt.HasValue == true)
+                                            {
+                                                @currentProfile.LastLoginAt.Value.ToString("MMM dd, yyyy 'at' HH:mm")
+                                            }
+                                            else
+                                            {
+                                                <span class="text-muted">Never</span>
+                                            }
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <div class="mb-3">
+                                    <label class="form-label fw-bold">Account Status</label>
+                                    <p class="form-control-plaintext">
+                                        @if (currentProfile?.IsActive == true)
+                                        {
+                                            <span class="badge bg-success"><i class="fas fa-check-circle"></i> Active</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="badge bg-danger"><i class="fas fa-times-circle"></i> Inactive</span>
+                                        }
+                                    </p>
+                                </div>
+                            }
+                        </div>
+                    </div>
+
+                                        <!-- Account Settings -->
+                    <div class="card shadow mt-3" id="settings">
+                        <div class="card-header bg-secondary text-white">
+                            <h6 class="mb-0"><i class="fas fa-cog"></i> Account Settings</h6>
+                        </div>
+                        <div class="card-body">
+                            <div class="mb-3">
+                                <label class="form-label">Account Status</label>
+                                <div class="d-flex align-items-center">
+                                    <span class="badge bg-success me-2">Active</span>
+                                    <small class="text-muted">Your account is active and secure</small>
+                                </div>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label class="form-label">Last Login</label>
+                                <div class="text-muted">
+                                    @if (currentProfile?.LastLoginAt != null)
+                                    {
+                                        <i class="fas fa-clock me-1"></i>
+                                        @currentProfile.LastLoginAt.Value.ToString("MMM dd, yyyy 'at' HH:mm")
+                                    }
+                                    else
+                                    {
+                                        <i class="fas fa-question-circle me-1"></i>
+                                        <span>Never logged in</span>
+                                    }
+                                </div>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <label class="form-label">Account Created</label>
+                                <div class="text-muted">
+                                    <i class="fas fa-calendar me-1"></i>
+                                    @(currentProfile?.CreatedAt.ToString("MMM dd, yyyy") ?? "Unknown")
+                                </div>
+                            </div>
+                            
+                            <div class="d-grid">
+                                <button class="btn btn-outline-secondary btn-sm" @onclick="RefreshProfile">
+                                    <i class="fas fa-sync-alt me-1"></i> Refresh Profile
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Password Management Section -->
+                <div class="col-lg-4" id="change-password">
+                    <div class="card shadow">
+                        <div class="card-header bg-warning text-dark">
+                            <h5 class="mb-0"><i class="fas fa-lock"></i> Password Management</h5>
+                        </div>
+                        <div class="card-body">
+                            <EditForm Model="passwordChangeRequest" OnValidSubmit="ChangePassword" FormName="superAdminPasswordChangeForm">
+                                <DataAnnotationsValidator />
+                                
+                                <div class="mb-3">
+                                    <label for="currentPassword" class="form-label">Current Password</label>
+                                    <InputText id="currentPassword" type="password" class="form-control" @bind-Value="passwordChangeRequest.CurrentPassword" />
+                                    <ValidationMessage For="@(() => passwordChangeRequest.CurrentPassword)" />
+                                </div>
+
+                                <div class="mb-3">
+                                    <label for="newPassword" class="form-label">New Password</label>
+                                    <InputText id="newPassword" type="password" class="form-control" @bind-Value="passwordChangeRequest.NewPassword" />
+                                    <ValidationMessage For="@(() => passwordChangeRequest.NewPassword)" />
+                                </div>
+
+                                <div class="mb-3">
+                                    <label for="confirmPassword" class="form-label">Confirm New Password</label>
+                                    <InputText id="confirmPassword" type="password" class="form-control" @bind-Value="passwordChangeRequest.ConfirmPassword" />
+                                    <ValidationMessage For="@(() => passwordChangeRequest.ConfirmPassword)" />
+                                </div>
+
+                                @if (!string.IsNullOrEmpty(passwordChangeRequest.NewPassword))
+                                {
+                                    <div class="mb-3">
+                                        <label class="form-label small">Password Strength:</label>
+                                        <div class="progress" style="height: 6px;">
+                                            <div class="progress-bar @GetPasswordStrengthClass()" role="progressbar" 
+                                                 style="width: @GetPasswordStrengthPercentage()%"></div>
+                                        </div>
+                                        <small class="text-muted">@GetPasswordStrengthText()</small>
+                                    </div>
+                                }
+
+                                <button type="submit" class="btn btn-warning w-100" disabled="@isPasswordLoading">
+                                    @if (isPasswordLoading)
+                                    {
+                                        <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                                    }
+                                    <i class="fas fa-key"></i> Change Password
+                                </button>
+                            </EditForm>
+
+                            <div class="mt-3">
+                                <small class="text-muted">
+                                    <i class="fas fa-info-circle"></i> Password must be at least 8 characters long and contain uppercase, lowercase, number, and special character.
+                                </small>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Security Tips -->
+                    <div class="card shadow mt-3">
+                        <div class="card-header bg-info text-white">
+                            <h6 class="mb-0"><i class="fas fa-shield-alt"></i> Security Tips</h6>
+                        </div>
+                        <div class="card-body">
+                            <ul class="list-unstyled mb-0">
+                                <li class="mb-2"><i class="fas fa-check text-success"></i> Use a strong, unique password</li>
+                                <li class="mb-2"><i class="fas fa-check text-success"></i> Don't share your credentials</li>
+                                <li class="mb-2"><i class="fas fa-check text-success"></i> Log out when finished</li>
+                                <li class="mb-0"><i class="fas fa-check text-success"></i> Keep your email updated</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private SuperAdminProfileInfo? currentProfile;
+    private SuperAdminUpdateProfileRequest profileUpdateRequest = new();
+    private SuperAdminChangePasswordRequest passwordChangeRequest = new();
+    
+    private string errorMessage = string.Empty;
+    private string successMessage = string.Empty;
+    private bool isLoading = false;
+    private bool isPasswordLoading = false;
+    private bool isEditMode = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadProfileData();
+    }
+
+    private async Task LoadProfileData()
+    {
+        try
+        {
+            isLoading = true;
+            var response = await SuperAdminService.GetProfileAsync();
+            
+            if (response.Success && response.Data != null)
+            {
+                currentProfile = response.Data;
+                
+                // Initialize edit form with current data
+                profileUpdateRequest.Username = currentProfile.Username;
+                profileUpdateRequest.Email = currentProfile.Email;
+                profileUpdateRequest.FullName = currentProfile.FullName;
+            }
+            else
+            {
+                errorMessage = response.Message;
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error loading profile: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task UpdateProfile()
+    {
+        try
+        {
+            isLoading = true;
+            errorMessage = string.Empty;
+            successMessage = string.Empty;
+
+            // Debug logging
+            Console.WriteLine($"Updating profile with: Username={profileUpdateRequest.Username}, Email={profileUpdateRequest.Email}, FullName={profileUpdateRequest.FullName}");
+
+            var response = await SuperAdminService.UpdateProfileAsync(profileUpdateRequest);
+            
+            Console.WriteLine($"Update response: Success={response.Success}, Message={response.Message}");
+            
+            if (response.Success)
+            {
+                successMessage = "Profile updated successfully!";
+                await LoadProfileData(); // Refresh data
+                
+                // Update the authentication state with the new profile data
+                if (currentProfile != null)
+                {
+                    var updatedSuperAdmin = new SuperAdminInfo
+                    {
+                        Id = currentProfile.Id,
+                        Username = currentProfile.Username,
+                        Email = currentProfile.Email,
+                        FullName = currentProfile.FullName
+                    };
+                    
+                    // Update the authentication state
+                    await AuthState.SetAuthenticationState(updatedSuperAdmin, AuthState.Token ?? string.Empty);
+                }
+                
+                isEditMode = false;
+            }
+            else
+            {
+                errorMessage = response.Message;
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Exception in UpdateProfile: {ex.Message}");
+            errorMessage = $"Error updating profile: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task ChangePassword()
+    {
+        try
+        {
+            isPasswordLoading = true;
+            errorMessage = string.Empty;
+            successMessage = string.Empty;
+
+            // Set the username from current profile or AuthState
+            passwordChangeRequest.Username = currentProfile?.Username ?? 
+                                              AuthState.CurrentSuperAdmin?.Username ?? 
+                                              string.Empty;
+
+            var response = await SuperAdminService.ChangePasswordAsync(passwordChangeRequest);
+            
+            if (response.Success)
+            {
+                successMessage = "Password changed successfully!";
+                passwordChangeRequest = new(); // Clear form
+            }
+            else
+            {
+                errorMessage = response.Message;
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error changing password: {ex.Message}";
+        }
+        finally
+        {
+            isPasswordLoading = false;
+        }
+    }
+
+    private void ToggleEditMode()
+    {
+        isEditMode = !isEditMode;
+        if (isEditMode)
+        {
+            // Reset form to current values
+            profileUpdateRequest.Username = currentProfile?.Username ?? string.Empty;
+            profileUpdateRequest.Email = currentProfile?.Email ?? string.Empty;
+            profileUpdateRequest.FullName = currentProfile?.FullName ?? string.Empty;
+        }
+    }
+
+    private void CancelEdit()
+    {
+        isEditMode = false;
+        errorMessage = string.Empty;
+        successMessage = string.Empty;
+    }
+
+    private string GetPasswordStrengthClass()
+    {
+        var strength = GetPasswordStrength();
+        if (strength < 25) return "bg-danger";
+        if (strength < 50) return "bg-warning";
+        if (strength < 75) return "bg-info";
+        return "bg-success";
+    }
+
+    private int GetPasswordStrengthPercentage()
+    {
+        return GetPasswordStrength();
+    }
+
+    private string GetPasswordStrengthText()
+    {
+        var strength = GetPasswordStrength();
+        if (strength < 25) return "Weak";
+        if (strength < 50) return "Fair";
+        if (strength < 75) return "Good";
+        return "Strong";
+    }
+
+    private int GetPasswordStrength()
+    {
+        if (string.IsNullOrEmpty(passwordChangeRequest.NewPassword))
+            return 0;
+
+        var password = passwordChangeRequest.NewPassword;
+        var score = 0;
+
+        // Length check
+        if (password.Length >= 8) score += 20;
+        if (password.Length >= 12) score += 10;
+
+        // Character variety checks
+        if (password.Any(char.IsUpper)) score += 15;
+        if (password.Any(char.IsLower)) score += 15;
+        if (password.Any(char.IsDigit)) score += 15;
+        if (password.Any(c => "!@#$%^&*()_+-=[]{}|;:,.<>?".Contains(c))) score += 15;
+
+        // Additional complexity
+        if (password.Length >= 16) score += 10;
+
+        return Math.Min(score, 100);
+    }
+
+    private async Task RefreshProfile()
+    {
+        await LoadProfileData();
+        successMessage = "Profile refreshed successfully!";
+    }
+}

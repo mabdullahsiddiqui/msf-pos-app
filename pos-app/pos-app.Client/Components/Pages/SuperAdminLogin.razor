@@ -1,0 +1,215 @@
+@page "/superadmin/login"
+@rendermode InteractiveWebAssembly
+@layout pos_app.Client.Components.Layout.SuperAdminLayout
+@using pos_app.Client.Models
+@using pos_app.Client.Services
+@inject SuperAdminService SuperAdminService
+@inject NavigationManager Navigation
+@inject AuthenticationStateService AuthState
+
+<PageTitle>Super Admin Login</PageTitle>
+
+<div class="card shadow">
+    <div class="card-header text-white text-center">
+        <h4><i class="fas fa-shield-alt"></i> Super Admin Login</h4>
+    </div>
+    <div class="card-body">
+        @if (!string.IsNullOrEmpty(errorMessage))
+        {
+            <div class="alert alert-danger" role="alert">
+                <i class="fas fa-exclamation-triangle"></i> @errorMessage
+            </div>
+        }
+
+        <EditForm Model="loginRequest" OnValidSubmit="HandleLogin" FormName="superAdminLoginForm">
+            <DataAnnotationsValidator />
+            
+            <div class="mb-3">
+                <label for="username" class="form-label">Username</label>
+                <InputText id="username" class="form-control" @bind-Value="loginRequest.Username" placeholder="Enter username" />
+                <ValidationMessage For="@(() => loginRequest.Username)" />
+            </div>
+
+            <div class="mb-3">
+                <label for="password" class="form-label">Password</label>
+                <InputText id="password" type="password" class="form-control" @bind-Value="loginRequest.Password" placeholder="Enter password" />
+                <ValidationMessage For="@(() => loginRequest.Password)" />
+            </div>
+
+            <div class="d-grid">
+                <button type="submit" class="btn btn-primary" disabled="@isLoading">
+                    @if (isLoading)
+                    {
+                        <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                    }
+                    <i class="fas fa-sign-in-alt"></i> Login
+                </button>
+            </div>
+        </EditForm>
+
+        <div class="text-center mt-3">
+            <a href="/superadmin/forgot-password" class="text-decoration-none">
+                <i class="fas fa-key"></i> Forgot Password?
+            </a>
+        </div>
+    </div>
+    <div class="card-footer text-center">
+        <small class="text-muted">
+            <i class="fas fa-info-circle"></i> Super Admin Access Only
+        </small>
+    </div>
+</div>
+
+<!-- Forgot Password Modal -->
+@if (showForgotPasswordModal)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="fas fa-key"></i> Forgot Password</h5>
+                    <button type="button" class="btn-close" @onclick="HideForgotPassword"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="forgotEmail" class="form-label">Email Address</label>
+                        <InputText id="forgotEmail" class="form-control" @bind-Value="forgotPasswordEmail" placeholder="Enter your email" />
+                    </div>
+                    @if (!string.IsNullOrEmpty(forgotPasswordMessage))
+                    {
+                        <div class="alert @(forgotPasswordSuccess ? "alert-success" : "alert-danger")" role="alert">
+                            @forgotPasswordMessage
+                        </div>
+                    }
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="HideForgotPassword">Cancel</button>
+                    <button type="button" class="btn btn-primary" @onclick="HandleForgotPassword" disabled="@isForgotPasswordLoading">
+                        @if (isForgotPasswordLoading)
+                        {
+                            <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                        }
+                        <i class="fas fa-paper-plane"></i> Send Reset
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private SuperAdminLoginRequest loginRequest = new();
+    private string errorMessage = string.Empty;
+    private bool isLoading = false;
+    private bool showForgotPasswordModal = false;
+    private string forgotPasswordEmail = string.Empty;
+    private string forgotPasswordMessage = string.Empty;
+    private bool forgotPasswordSuccess = false;
+    private bool isForgotPasswordLoading = false;
+
+    protected override void OnInitialized()
+    {
+        // Pre-fill with default credentials for now
+        loginRequest.Username = "imabdullahsiddiqui@gmail.com";
+        loginRequest.Password = "test1234";
+    }
+
+    private async Task HandleLogin()
+    {
+        isLoading = true;
+        errorMessage = string.Empty;
+
+        try
+        {
+            var response = await SuperAdminService.LoginAsync(loginRequest);
+            Console.WriteLine("Login response: " + System.Text.Json.JsonSerializer.Serialize(response));
+            Console.WriteLine("Login request: " + System.Text.Json.JsonSerializer.Serialize(loginRequest));
+            if (response.Success)
+            {
+                // Store authentication state
+                if (response.SuperAdmin != null)
+                {
+                    Console.WriteLine($"Login successful, storing auth state for: {response.SuperAdmin.Username}");
+                    await AuthState.SetAuthenticationState(response.SuperAdmin, response.Token);
+                    Console.WriteLine($"Auth state stored, IsAuthenticated: {AuthState.IsAuthenticated}");
+                    Console.WriteLine($"Login successful, navigating to dashboard...");
+                    // Use forceLoad to ensure the page reloads and authentication state is properly recognized
+                    Navigation.NavigateTo("/superadmin/dashboard", forceLoad: true);
+                }
+                else
+                {
+                    errorMessage = "Login successful but user data not received";
+                }
+            }
+            else
+            {
+                errorMessage = response.Message;
+                Console.WriteLine($"Login is failed: {response.Message}");
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Login failed: {ex.Message}";
+            Console.WriteLine($"Login exception: {ex.Message}");
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private void ShowForgotPassword()
+    {
+        showForgotPasswordModal = true;
+        forgotPasswordEmail = loginRequest.Username; // Pre-fill with current username
+        forgotPasswordMessage = string.Empty;
+    }
+
+    private void HideForgotPassword()
+    {
+        showForgotPasswordModal = false;
+        forgotPasswordEmail = string.Empty;
+        forgotPasswordMessage = string.Empty;
+    }
+
+    private async Task HandleForgotPassword()
+    {
+        if (string.IsNullOrWhiteSpace(forgotPasswordEmail))
+        {
+            forgotPasswordMessage = "Please enter your email address";
+            forgotPasswordSuccess = false;
+            return;
+        }
+
+        isForgotPasswordLoading = true;
+        forgotPasswordMessage = string.Empty;
+
+        try
+        {
+            var response = await SuperAdminService.ForgotPasswordAsync(new SuperAdminForgotPasswordRequest
+            {
+                Email = forgotPasswordEmail
+            });
+
+            if (response.Success)
+            {
+                forgotPasswordMessage = response.Message;
+                forgotPasswordSuccess = true;
+            }
+            else
+            {
+                forgotPasswordMessage = response.Message;
+                forgotPasswordSuccess = false;
+            }
+        }
+        catch (Exception ex)
+        {
+            forgotPasswordMessage = $"Error: {ex.Message}";
+            forgotPasswordSuccess = false;
+        }
+        finally
+        {
+            isForgotPasswordLoading = false;
+        }
+    }
+}

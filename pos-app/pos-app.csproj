@@ -9,6 +9,13 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Remove="GenJwtSecret\**" />
+    <Content Remove="GenJwtSecret\**" />
+    <EmbeddedResource Remove="GenJwtSecret\**" />
+    <None Remove="GenJwtSecret\**" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\pos-app.Client\pos-app.Client.csproj" />
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.Server" Version="8.0.20" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="8.0.18" />

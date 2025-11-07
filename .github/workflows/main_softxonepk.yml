@@ -1,7 +1,7 @@
 # Docs for the Azure Web Apps Deploy action: https://github.com/Azure/webapps-deploy
 # More GitHub Actions for Azure: https://github.com/Azure/actions
 
-name: Build and deploy Blazor WebAssembly app to Azure Web App - softxonepk
+name: Build and deploy ASP.Net Core app to Azure Web App - softxonepk
 
 on:
   push:
@@ -23,20 +23,17 @@ jobs:
         with:
           dotnet-version: '8.x'
 
-      - name: Restore dependencies
-        run: dotnet restore pos-app/pos-app/pos-app/pos-app.csproj
-
       - name: Build with dotnet
-        run: dotnet build pos-app/pos-app/pos-app/pos-app.csproj --configuration Release --no-restore
+        run: dotnet build --configuration Release
 
       - name: dotnet publish
-        run: dotnet publish pos-app/pos-app/pos-app/pos-app.csproj -c Release -o ./publish --no-build
+        run: dotnet publish -c Release -o "${{env.DOTNET_ROOT}}/myapp"
 
       - name: Upload artifact for deployment job
         uses: actions/upload-artifact@v4
         with:
           name: .net-app
-          path: ./publish
+          path: ${{env.DOTNET_ROOT}}/myapp
 
   deploy:
     runs-on: windows-latest
@@ -54,9 +51,9 @@ jobs:
       - name: Login to Azure
         uses: azure/login@v2
         with:
-          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_PLACEHOLDER }}
-          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_PLACEHOLDER }}
-          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_PLACEHOLDER }}
+          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_0E77DF179DA54F02A1A66EB3A6A098E8 }}
+          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_DE21E098C61C4A1E858CD1B396C3228E }}
+          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_48C289D9A7A645568D7AACEBB5BD6BE8 }}
 
       - name: Deploy to Azure Web App
         id: deploy-to-webapp
@@ -65,4 +62,4 @@ jobs:
           app-name: 'softxonepk'
           slot-name: 'Production'
           package: .
-
+          

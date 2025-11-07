@@ -24,13 +24,13 @@ jobs:
           dotnet-version: '8.x'
 
       - name: Restore dependencies
-        run: dotnet restore pos-app/pos-app/pos-app.sln
+        run: dotnet restore pos-app/pos-app.sln
 
       - name: Build with dotnet
-        run: dotnet build pos-app/pos-app/pos-app.sln --configuration Release --no-restore
+        run: dotnet build pos-app/pos-app.sln --configuration Release --no-restore
 
       - name: dotnet publish
-        run: dotnet publish pos-app/pos-app/pos-app/pos-app.csproj -c Release -o ./publish --no-build
+        run: dotnet publish pos-app/pos-app/pos-app.csproj -c Release -o ./publish --no-build
 
       - name: Upload artifact for deployment job
         uses: actions/upload-artifact@v4

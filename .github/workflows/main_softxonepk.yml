@@ -24,10 +24,10 @@ jobs:
           dotnet-version: '8.x'
 
       - name: Restore dependencies
-        run: dotnet restore pos-app/pos-app/pos-app/pos-app.csproj
+        run: dotnet restore pos-app/pos-app/pos-app.sln
 
       - name: Build with dotnet
-        run: dotnet build pos-app/pos-app/pos-app/pos-app.csproj --configuration Release --no-restore
+        run: dotnet build pos-app/pos-app/pos-app.sln --configuration Release --no-restore
 
       - name: dotnet publish
         run: dotnet publish pos-app/pos-app/pos-app/pos-app.csproj -c Release -o ./publish --no-build

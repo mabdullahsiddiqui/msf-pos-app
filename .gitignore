@@ -516,10 +516,8 @@ obj/
 **/obj/
 **/wwwroot/_framework/
 
-# SQLite database files (if you want to ignore them)
+# SQLite database files
+*.db
 *.db-shm
 *.db-wal
-
-# But keep the master.db if it's needed for deployment
-# !master.db
 

@@ -69,8 +69,8 @@
     // HTML id attribute for the input
     [Parameter] public string Id { get; set; } = string.Empty;
 
-    // Bootstrap column class (e.g., "col-md-3", "col-md-4")
-    [Parameter] public string ColumnClass { get; set; } = "col-md-3";
+    // Bootstrap column class (e.g., "col-12 col-md-3", "col-12 col-sm-6 col-md-4")
+    [Parameter] public string ColumnClass { get; set; } = "col-12 col-md-3";
 
     // Minimum allowed date
     [Parameter] public DateTime? MinDate { get; set; }

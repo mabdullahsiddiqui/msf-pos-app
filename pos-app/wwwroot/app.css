@@ -323,3 +323,35 @@ h1:focus {
         font-size: 1.5rem !important;
     }
 }
+
+/* Additional responsive utilities */
+@media (max-width: 575.98px) {
+    /* Ensure containers don't overflow on mobile */
+    .container-fluid {
+        padding-left: 0.75rem;
+        padding-right: 0.75rem;
+    }
+    
+    /* Better spacing for cards on mobile */
+    .card {
+        margin-bottom: 1rem;
+    }
+    
+    /* Improve button spacing on mobile */
+    .btn {
+        white-space: nowrap;
+    }
+    
+    /* Better form control sizing on mobile */
+    .form-control {
+        font-size: 16px; /* Prevents zoom on iOS */
+    }
+}
+
+/* Tablet adjustments */
+@media (min-width: 576px) and (max-width: 991.98px) {
+    .container-fluid {
+        padding-left: 1rem;
+        padding-right: 1rem;
+    }
+}

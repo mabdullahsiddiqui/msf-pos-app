@@ -1,6 +1,6 @@
 @using Microsoft.AspNetCore.Components
 
-<div class="row summary-cards">
+<div class="row summary-cards g-3">
     @ChildContent
 </div>
 
@@ -10,11 +10,13 @@
         display: flex;
         flex-wrap: wrap;
         align-items: stretch;
+        margin-bottom: 1rem;
     }
     
-    .summary-cards .col-md-3 {
+    /* Target all column classes used in summary cards */
+    .summary-cards > div[class*="col-"] {
         display: flex;
-        margin-bottom: 1rem;
+        margin-bottom: 0 !important;
         align-items: stretch;
     }
     
@@ -33,6 +35,25 @@
         justify-content: center;
         align-items: center;
         text-align: center;
+    }
+    
+    /* Mobile responsive adjustments */
+    @@media (max-width: 575.98px) {
+        .summary-cards > div[class*="col-"] {
+            margin-bottom: 0.75rem;
+        }
+        
+        .summary-cards .card {
+            min-height: 100px !important;
+        }
+        
+        .summary-cards .card-body h4 {
+            font-size: 1.25rem;
+        }
+        
+        .summary-cards .card-body h6 {
+            font-size: 0.875rem;
+        }
     }
 </style>
 

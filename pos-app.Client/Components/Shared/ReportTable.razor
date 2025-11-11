@@ -74,16 +74,20 @@
         overflow-x: auto;
         border-radius: 5px;
         border: 1px solid #dee2e6;
+        -webkit-overflow-scrolling: touch;
     }
 
     .table {
         margin-bottom: 0;
+        width: 100%;
+        min-width: 600px;
     }
 
     .table thead th {
         background-color: #e0e0e0;
         border-bottom: 2px solid #dee2e6;
         font-weight: 600;
+        white-space: nowrap;
     }
 
     .table tbody tr:hover {
@@ -102,6 +106,49 @@
     .filter-row th {
         background-color: #f8f9fa !important;
         padding: 4px !important;
+    }
+
+    /* Mobile responsive adjustments */
+    @@media (max-width: 767.98px) {
+        .report-header {
+            padding: 10px;
+            margin-bottom: 15px;
+        }
+
+        .report-footer {
+            padding: 8px;
+            margin-top: 15px;
+        }
+
+        .table thead th {
+            font-size: 0.875rem;
+            padding: 0.5rem 0.25rem;
+        }
+
+        .table tbody td {
+            font-size: 0.875rem;
+            padding: 0.5rem 0.25rem;
+        }
+
+        .table {
+            min-width: 500px;
+        }
+    }
+
+    @@media (max-width: 575.98px) {
+        .table thead th {
+            font-size: 0.75rem;
+            padding: 0.4rem 0.2rem;
+        }
+
+        .table tbody td {
+            font-size: 0.75rem;
+            padding: 0.4rem 0.2rem;
+        }
+
+        .table {
+            min-width: 400px;
+        }
     }
 </style>
 

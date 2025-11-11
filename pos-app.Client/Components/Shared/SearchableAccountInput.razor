@@ -105,8 +105,8 @@
     // Additional CSS classes
     [Parameter] public string? AdditionalClass { get; set; }
 
-    // Bootstrap column class
-    [Parameter] public string ColumnClass { get; set; } = "col-md-3";
+    // Bootstrap column class (e.g., "col-12 col-md-3", "col-12 col-sm-6 col-md-4")
+    [Parameter] public string ColumnClass { get; set; } = "col-12 col-md-3";
 
     private List<ClientCustomer> allAccounts = new();
     private List<ClientCustomer> filteredAccounts = new();

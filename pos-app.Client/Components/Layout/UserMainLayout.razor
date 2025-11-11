@@ -310,7 +310,7 @@ else
                     {
                         <ul class="submenu">
                             <li class="nav-item">
-                                <a class="nav-link submenu-link" href="#" @onclick="CloseSidebar">
+                                <a class="nav-link submenu-link @GetActiveClass("/reports/purchase-journal")" href="/reports/purchase-journal" @onclick="CloseSidebar">
                                     <i class="fas fa-book"></i> Purchase Journal
                                 </a>
                             </li>
@@ -1038,6 +1038,12 @@ else
         {
             isFinancialReportsExpanded = true;
         }
+        
+        // Check if any purchase report is active
+        if (currentPath.Contains("/reports/purchase-journal"))
+        {
+            isPurchaseReportsExpanded = true;
+        }
     }
 
     private string GetActiveClass(string path)
@@ -1207,6 +1213,7 @@ else
             var path when path.Contains("/reports/cash-book") => "Cash Book Report",
             var path when path.Contains("/reports/journal-book") => "Journal Book Report",
             var path when path.Contains("/reports/transaction-journal") => "Transaction Journal Report",
+            var path when path.Contains("/reports/purchase-journal") => "Purchase Journal Report",
             var path when path.Contains("/reports/customer-aging") => "Customer Aging Report",
             var path when path.Contains("/reports/supplier-aging") => "Supplier Aging Report",
             var path when path.Contains("/user/profile") => "User Profile",

@@ -686,6 +686,48 @@ namespace pos_app.Client.Services
             }
         }
 
+        // Purchase Journal Report
+        public async Task<PurchaseJournalResponse> GetPurchaseJournalAsync(
+            DateTime fromDate, 
+            DateTime toDate, 
+            string invoiceType = "All")
+        {
+            try
+            {
+                var client = await CreateAuthedClientAsync();
+                var url = "api/reports/purchase-journal";
+                var queryParams = new List<string>();
+                
+                queryParams.Add($"fromDate={fromDate:yyyy-MM-dd}");
+                queryParams.Add($"toDate={toDate:yyyy-MM-dd}");
+                
+                if (!string.IsNullOrEmpty(invoiceType))
+                {
+                    queryParams.Add($"invoiceType={Uri.EscapeDataString(invoiceType)}");
+                }
+                
+                if (queryParams.Any())
+                {
+                    url += "?" + string.Join("&", queryParams);
+                }
+
+                var response = await client.GetAsync(url);
+                if (response.IsSuccessStatusCode)
+                {
+                    var result = await response.Content.ReadFromJsonAsync<PurchaseJournalResponse>();
+                    return result ?? new PurchaseJournalResponse { Success = false, Message = "Invalid response from server" };
+                }
+
+                var errorContent = await response.Content.ReadAsStringAsync();
+                return new PurchaseJournalResponse { Success = false, Message = $"Failed to fetch purchase journal: {response.StatusCode}" };
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching purchase journal");
+                return new PurchaseJournalResponse { Success = false, Message = $"Error: {ex.Message}" };
+            }
+        }
+
         // Customer Aging Report
         public async Task<CustomerAgingResponse> GetCustomerAgingAsync(
             string? fromAccount = null,

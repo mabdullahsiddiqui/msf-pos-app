@@ -1,0 +1,276 @@
+@page "/reports/purchase-journal"
+@using pos_app.Client.Services
+@using pos_app.Client.Models
+@using pos_app.Client.Components.Shared
+@inject DataService DataService
+@inject SessionService SessionService
+@inject IJSRuntime JSRuntime
+
+<PageTitle>Purchase Journal Report - POS System</PageTitle>
+
+<style>
+    .total-row {
+        background-color: #e9ecef !important;
+        font-weight: bold;
+    }
+    
+    .voucher-total-row {
+        background-color: #f8f9fa !important;
+        font-weight: bold;
+    }
+    
+    .grand-total-row {
+        background-color: #e9ecef !important;
+        font-weight: bold;
+        font-size: 1.1em;
+    }
+    
+    .journal-table td {
+        vertical-align: top;
+    }
+    
+    .journal-table .text-end {
+        text-align: right;
+    }
+    
+    /* Ensure header text is black */
+    .journal-table thead th {
+        color: #000 !important;
+    }
+
+    .description-text {
+        white-space: pre-line;
+        word-wrap: break-word;
+        line-height: 1.6;
+    }
+</style>
+
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+
+            <!-- Date Filter and Invoice Type Selection -->
+            <FilterCard Title="Purchase Journal (Date to Date)" IconClass="fas fa-book">
+                <div class="row mb-3">
+                    <DateInput Label="From Date:" Id="fromDate" @bind-Value="fromDate" MinDate="@minDate" />
+                    <DateInput Label="Upto Date:" Id="toDate" @bind-Value="toDate" />
+                    <div class="col-md-3">
+                        <label class="form-label">Invoice Type:</label>
+                        <select class="form-select" @bind="invoiceType">
+                            <option value="All">All</option>
+                            <option value="Crop">Crop</option>
+                            <option value="E.Sack">E.Sack</option>
+                            <option value="Others">Others</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3 d-flex align-items-end gap-2">
+                        <ActionButton Text="Preview" IconClass="fas fa-search" OnClick="LoadPurchaseJournal" IsLoading="@isLoading" IsDisabled="@isLoading" />
+                        @if (purchaseJournalData != null && purchaseJournalData.Success)
+                        {
+                            <ActionButton Text="Print" IconClass="fas fa-print" OnClick="PrintReport" IsDisabled="@isLoading" />
+                        }
+                    </div>
+                </div>
+            </FilterCard>
+
+            <!-- Loading Indicator -->
+            @if (isLoading)
+            {
+                <LoadingSpinner Message="Generating purchase journal report..." />
+            }
+
+            <!-- Error Message -->
+            <ErrorAlert Message="@errorMessage" />
+
+            <!-- Report Data -->
+            @if (purchaseJournalData != null && purchaseJournalData.Success)
+            {
+                <ReportTable FilterableColumns="@(new List<int> { 0, 1, 2 })">
+                    <HeaderContent>
+                        <ReportTitleHeader Title="Purchase Journal" IconClass="fas fa-book">
+                            <DateRangeContent>
+                                From: @purchaseJournalData.FromDate.ToString("dd/MM/yyyy") 
+                                To Date: @purchaseJournalData.ToDate.ToString("dd/MM/yyyy")
+                            </DateRangeContent>
+                        </ReportTitleHeader>
+                    </HeaderContent>
+                    
+                    <SummaryCards>
+                        <SummaryCard Title="Total Debit" Value="@CurrencyHelper.FormatNumber(purchaseJournalData.TotalDebit)" BgColor="danger" ColumnClass="col-md-4" />
+                        <SummaryCard Title="Total Credit" Value="@CurrencyHelper.FormatNumber(purchaseJournalData.TotalCredit)" BgColor="success" ColumnClass="col-md-4" />
+                        <SummaryCard Title="Invoice Type" Value="@purchaseJournalData.InvoiceType" BgColor="info" ColumnClass="col-md-4" />
+                    </SummaryCards>
+
+                    <BodyContent>
+                        <div class="table-responsive">
+                            <table class="table table-bordered journal-table">
+                                <thead>
+                                    <tr>
+                                        <th>Voucher No.</th>
+                                        <th>Date</th>
+                                        <th>Description</th>
+                                        <th class="text-end">Dr. Amount</th>
+                                        <th class="text-end">Cr. Amount</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @if (purchaseJournalData.Data.Any())
+                                    {
+                                        @foreach (var item in purchaseJournalData.Data)
+                                        {
+                                            <tr class="@(item.IsGrandTotal ? "grand-total-row" : item.IsVoucherTotal ? "voucher-total-row" : "")">
+                                                <td>
+                                                    @if (!string.IsNullOrEmpty(item.VoucherNo))
+                                                    {
+                                                        @if (item.IsVoucherTotal || item.IsGrandTotal)
+                                                        {
+                                                            <strong>@item.VoucherNo</strong>
+                                                        }
+                                                        else
+                                                        {
+                                                            @item.VoucherNo
+                                                        }
+                                                    }
+                                                </td>
+                                                <td>
+                                                    @if (item.Date.HasValue)
+                                                    {
+                                                        @item.Date.Value.ToString("dd/MM/yyyy")
+                                                    }
+                                                </td>
+                                                <td>
+                                                    @if (item.IsGrandTotal)
+                                                    {
+                                                        <strong>@item.Description</strong>
+                                                    }
+                                                    else if (!string.IsNullOrWhiteSpace(item.Description))
+                                                    {
+                                                        <div class="description-text">
+                                                            @* Show AccName (bold, underlined) on first line if it exists *@
+                                                            @if (!string.IsNullOrWhiteSpace(item.AccName))
+                                                            {
+                                                                <div class="fw-bold text-decoration-underline">@item.AccName.ToUpper()</div>
+                                                            }
+                                                            @* Show Description on second line *@
+                                                            @if (!string.IsNullOrWhiteSpace(item.Description))
+                                                            {
+                                                                <div>@item.Description</div>
+                                                            }
+                                                        </div>
+                                                    }
+                                                </td>
+                                                <td class="text-end">
+                                                    @if (item.Debit > 0)
+                                                    {
+                                                        <span>@CurrencyHelper.FormatNumber(item.Debit)</span>
+                                                    }
+                                                    else
+                                                    {
+                                                        <span>0.00</span>
+                                                    }
+                                                </td>
+                                                <td class="text-end">
+                                                    @if (item.Credit > 0)
+                                                    {
+                                                        <span>@CurrencyHelper.FormatNumber(item.Credit)</span>
+                                                    }
+                                                    else
+                                                    {
+                                                        <span>0.00</span>
+                                                    }
+                                                </td>
+                                            </tr>
+                                        }
+                                    }
+                                    else
+                                    {
+                                        <tr>
+                                            <td colspan="5" class="text-center text-muted">No purchase transactions found for the selected period and invoice type.</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    </BodyContent>
+
+                    <FooterContent>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <strong>Total Debit: @CurrencyHelper.FormatNumber(purchaseJournalData.TotalDebit)</strong>
+                            </div>
+                            <div class="col-md-6">
+                                <strong>Total Credit: @CurrencyHelper.FormatNumber(purchaseJournalData.TotalCredit)</strong>
+                            </div>
+                        </div>
+                    </FooterContent>
+                </ReportTable>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    private DateTime fromDate;
+    private DateTime toDate = DateTime.Now;
+    private string invoiceType = "All";
+    private PurchaseJournalResponse? purchaseJournalData;
+    private bool isLoading = false;
+    private string errorMessage = string.Empty;
+    private DateTime? minDate;
+    
+    protected override async Task OnInitializedAsync()
+    {
+        // Get minimum date from session
+        minDate = await SessionService.GetMinDateAsync();
+        
+        // Set fromDate to session start_date if available, otherwise use current month start
+        if (minDate.HasValue)
+        {
+            fromDate = minDate.Value;
+        }
+        else
+        {
+            fromDate = new DateTime(DateTime.Now.Year, DateTime.Now.Month, 1);
+        }
+        
+        toDate = DateTime.Now;
+    }
+
+    private async Task LoadPurchaseJournal()
+    {
+        if (fromDate > toDate)
+        {
+            errorMessage = "From Date cannot be greater than To Date.";
+            return;
+        }
+
+        isLoading = true;
+        errorMessage = string.Empty;
+        purchaseJournalData = null;
+
+        try
+        {
+            purchaseJournalData = await DataService.GetPurchaseJournalAsync(fromDate, toDate, invoiceType);
+            
+            if (!purchaseJournalData.Success)
+            {
+                errorMessage = purchaseJournalData.Message;
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"An error occurred while loading the purchase journal: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task PrintReport()
+    {
+        // Trigger browser print dialog
+        await JSRuntime.InvokeVoidAsync("window.print");
+    }
+}
+

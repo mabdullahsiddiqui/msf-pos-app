@@ -29,16 +29,25 @@ else if (!isAuthenticated)
 else
 {
     <div class="min-vh-100 d-flex">
+    <!-- Sidebar Overlay (Mobile only) -->
+    @if (isSidebarOpen)
+    {
+        <div class="sidebar-overlay d-md-none" @onclick="CloseSidebar"></div>
+    }
+    
     <!-- Sidebar -->
-    <div class="sidebar bg-dark text-white">
-        <div class="sidebar-header p-3">
-            <h5><i class="fas fa-store"></i> POS System</h5>
+    <div class="sidebar bg-dark text-white @(isSidebarOpen ? "sidebar-open" : "")">
+        <div class="sidebar-header p-3 d-flex justify-content-between align-items-center">
+            <h5 class="mb-0"><i class="fas fa-store"></i> <span class="sidebar-title">POS System</span></h5>
+            <button class="btn btn-link text-white sidebar-close-btn" @onclick="CloseSidebar" aria-label="Close sidebar">
+                <i class="fas fa-times"></i>
+            </button>
         </div>
         <nav class="sidebar-nav d-flex flex-column h-100">
             <ul class="nav flex-column flex-grow-1">
                 <!-- Dashboard -->
                 <li class="nav-item">
-                    <a class="nav-link @GetActiveClass("/dashboard")" href="/dashboard">
+                    <a class="nav-link @GetActiveClass("/dashboard")" href="/dashboard" @onclick="CloseSidebar">
                         <i class="fas fa-tachometer-alt"></i> Dashboard
                     </a>
                 </li>
@@ -60,17 +69,17 @@ else
                     {
                         <ul class="submenu">
                             <li class="nav-item">
-                                <a class="nav-link submenu-link @GetActiveClass("/reports/ledger")" href="/reports/ledger">
+                                <a class="nav-link submenu-link @GetActiveClass("/reports/ledger")" href="/reports/ledger" @onclick="CloseSidebar">
                                     <i class="fas fa-journal-whills"></i> A/C Ledger
                                 </a>
                             </li>
                             <li class="nav-item">
-                                <a class="nav-link submenu-link @GetActiveClass("/reports/cash-book")" href="/reports/cash-book">
+                                <a class="nav-link submenu-link @GetActiveClass("/reports/cash-book")" href="/reports/cash-book" @onclick="CloseSidebar">
                                     <i class="fas fa-book-open"></i> Cash Book
                                 </a>
                             </li>
                             <li class="nav-item">
-                                <a class="nav-link submenu-link @GetActiveClass("/reports/journal-book")" href="/reports/journal-book">
+                                <a class="nav-link submenu-link @GetActiveClass("/reports/journal-book")" href="/reports/journal-book" @onclick="CloseSidebar">
                                     <i class="fas fa-journal-whills"></i> Journal Book
                                 </a>
                             </li>
@@ -82,12 +91,12 @@ else
                             </li>
                             -->
                             <li class="nav-item">
-                                <a class="nav-link submenu-link @GetActiveClass("/reports/account-inquiry")" href="/reports/account-inquiry">
+                                <a class="nav-link submenu-link @GetActiveClass("/reports/account-inquiry")" href="/reports/account-inquiry" @onclick="CloseSidebar">
                                     <i class="fas fa-search"></i> Account Inquiry
                                 </a>
                             </li>
                             <li class="nav-item">
-                                <a class="nav-link submenu-link @GetActiveClass("/reports/trial-balance")" href="/reports/trial-balance">
+                                <a class="nav-link submenu-link @GetActiveClass("/reports/trial-balance")" href="/reports/trial-balance" @onclick="CloseSidebar">
                                     <i class="fas fa-balance-scale"></i> Trial Balance
                                 </a>
                             </li>
@@ -99,12 +108,12 @@ else
                             </li>
                             -->
                             <li class="nav-item">
-                                <a class="nav-link submenu-link @GetActiveClass("/reports/monthly-account-balance")" href="/reports/monthly-account-balance">
+                                <a class="nav-link submenu-link @GetActiveClass("/reports/monthly-account-balance")" href="/reports/monthly-account-balance" @onclick="CloseSidebar">
                                     <i class="fas fa-calendar-alt"></i> Month Wise Report
                                 </a>
                             </li>
                             <li class="nav-item">
-                                <a class="nav-link submenu-link @GetActiveClass("/reports/transaction-journal")" href="/reports/transaction-journal">
+                                <a class="nav-link submenu-link @GetActiveClass("/reports/transaction-journal")" href="/reports/transaction-journal" @onclick="CloseSidebar">
                                     <i class="fas fa-receipt"></i> Transaction Journal
                                 </a>
                             </li>
@@ -116,12 +125,12 @@ else
                             </li>
                             -->
                             <li class="nav-item">
-                                <a class="nav-link submenu-link @GetActiveClass("/reports/three-trial-balance")" href="/reports/three-trial-balance">
+                                <a class="nav-link submenu-link @GetActiveClass("/reports/three-trial-balance")" href="/reports/three-trial-balance" @onclick="CloseSidebar">
                                     <i class="fas fa-file-alt"></i> 3 Col. Trial Balance
                                 </a>
                             </li>
                             <li class="nav-item">
-                                <a class="nav-link submenu-link @GetActiveClass("/reports/customer-aging")" href="/reports/customer-aging">
+                                <a class="nav-link submenu-link @GetActiveClass("/reports/customer-aging")" href="/reports/customer-aging" @onclick="CloseSidebar">
                                     <i class="fas fa-user-clock"></i> Customer Aging
                                 </a>
                             </li>
@@ -133,7 +142,7 @@ else
                             </li>
                             -->
                             <li class="nav-item">
-                                <a class="nav-link submenu-link @GetActiveClass("/reports/supplier-aging")" href="/reports/supplier-aging">
+                                <a class="nav-link submenu-link @GetActiveClass("/reports/supplier-aging")" href="/reports/supplier-aging" @onclick="CloseSidebar">
                                     <i class="fas fa-truck"></i> Supplier's Aging
                                 </a>
                             </li>
@@ -186,17 +195,17 @@ else
                     {
                         <ul class="submenu">
                             <li class="nav-item">
-                                <a class="nav-link submenu-link" href="#">
+                                <a class="nav-link submenu-link" href="#" @onclick="CloseSidebar">
                                     <i class="fas fa-file-alt"></i> A/C Chart List
                                 </a>
                             </li>
                             <li class="nav-item">
-                                <a class="nav-link submenu-link" href="#">
+                                <a class="nav-link submenu-link" href="#" @onclick="CloseSidebar">
                                     <i class="fas fa-list-alt"></i> Item Chart List
                                 </a>
                             </li>
                             <li class="nav-item">
-                                <a class="nav-link submenu-link" href="#">
+                                <a class="nav-link submenu-link" href="#" @onclick="CloseSidebar">
                                     <i class="fas fa-search"></i> Item Inquiry
                                 </a>
                             </li>
@@ -221,22 +230,22 @@ else
                     {
                         <ul class="submenu">
                             <li class="nav-item">
-                                <a class="nav-link submenu-link" href="#">
+                                <a class="nav-link submenu-link" href="#" @onclick="CloseSidebar">
                                     <i class="fas fa-chart-line"></i> Heap Wise Stock
                                 </a>
                             </li>
                             <li class="nav-item">
-                                <a class="nav-link submenu-link" href="#">
+                                <a class="nav-link submenu-link" href="#" @onclick="CloseSidebar">
                                     <i class="fas fa-truck"></i> Heap Wise Arrival
                                 </a>
                             </li>
                             <li class="nav-item">
-                                <a class="nav-link submenu-link" href="#">
+                                <a class="nav-link submenu-link" href="#" @onclick="CloseSidebar">
                                     <i class="fas fa-shopping-cart"></i> Heap Wise Purchases
                                 </a>
                             </li>
                             <li class="nav-item">
-                                <a class="nav-link submenu-link" href="#">
+                                <a class="nav-link submenu-link" href="#" @onclick="CloseSidebar">
                                     <i class="fas fa-box-open"></i> Heap Wise Issuance
                                 </a>
                             </li>
@@ -261,22 +270,22 @@ else
                     {
                         <ul class="submenu">
                             <li class="nav-item">
-                                <a class="nav-link submenu-link" href="#">
+                                <a class="nav-link submenu-link" href="#" @onclick="CloseSidebar">
                                     <i class="fas fa-book"></i> Arrival Book
                                 </a>
                             </li>
                             <li class="nav-item">
-                                <a class="nav-link submenu-link" href="#">
+                                <a class="nav-link submenu-link" href="#" @onclick="CloseSidebar">
                                     <i class="fas fa-truck"></i> Supplier Wise Arrival
                                 </a>
                             </li>
                             <li class="nav-item">
-                                <a class="nav-link submenu-link" href="#">
+                                <a class="nav-link submenu-link" href="#" @onclick="CloseSidebar">
                                     <i class="fas fa-cube"></i> Product Wise Arrival
                                 </a>
                             </li>
                             <li class="nav-item">
-                                <a class="nav-link submenu-link" href="#">
+                                <a class="nav-link submenu-link" href="#" @onclick="CloseSidebar">
                                     <i class="fas fa-layer-group"></i> Heap Wise Arrival
                                 </a>
                             </li>
@@ -301,52 +310,52 @@ else
                     {
                         <ul class="submenu">
                             <li class="nav-item">
-                                <a class="nav-link submenu-link" href="#">
+                                <a class="nav-link submenu-link" href="#" @onclick="CloseSidebar">
                                     <i class="fas fa-book"></i> Purchase Journal
                                 </a>
                             </li>
                             <li class="nav-item">
-                                <a class="nav-link submenu-link" href="#">
+                                <a class="nav-link submenu-link" href="#" @onclick="CloseSidebar">
                                     <i class="fas fa-clipboard-list"></i> Purchase Register
                                 </a>
                             </li>
                             <li class="nav-item">
-                                <a class="nav-link submenu-link" href="#">
+                                <a class="nav-link submenu-link" href="#" @onclick="CloseSidebar">
                                     <i class="fas fa-journal-whills"></i> Item Pur. Ledger
                                 </a>
                             </li>
                             <li class="nav-item">
-                                <a class="nav-link submenu-link" href="#">
+                                <a class="nav-link submenu-link" href="#" @onclick="CloseSidebar">
                                     <i class="fas fa-file-alt"></i> Item Pur. Summary
                                 </a>
                             </li>
                             <li class="nav-item">
-                                <a class="nav-link submenu-link" href="#">
+                                <a class="nav-link submenu-link" href="#" @onclick="CloseSidebar">
                                     <i class="fas fa-clipboard-list"></i> Item Purchase Register
                                 </a>
                             </li>
                             <li class="nav-item">
-                                <a class="nav-link submenu-link" href="#">
+                                <a class="nav-link submenu-link" href="#" @onclick="CloseSidebar">
                                     <i class="fas fa-journal-whills"></i> Supplier Pur. ledger
                                 </a>
                             </li>
                             <li class="nav-item">
-                                <a class="nav-link submenu-link" href="#">
+                                <a class="nav-link submenu-link" href="#" @onclick="CloseSidebar">
                                     <i class="fas fa-file-alt"></i> Supplier Pur. Summary
                                 </a>
                             </li>
                             <li class="nav-item">
-                                <a class="nav-link submenu-link" href="#">
+                                <a class="nav-link submenu-link" href="#" @onclick="CloseSidebar">
                                     <i class="fas fa-receipt"></i> Supplier Tax Ledger
                                 </a>
                             </li>
                             <li class="nav-item">
-                                <a class="nav-link submenu-link" href="#">
+                                <a class="nav-link submenu-link" href="#" @onclick="CloseSidebar">
                                     <i class="fas fa-layer-group"></i> Heap Wise Purchases
                                 </a>
                             </li>
                             <li class="nav-item">
-                                <a class="nav-link submenu-link" href="#">
+                                <a class="nav-link submenu-link" href="#" @onclick="CloseSidebar">
                                     <i class="fas fa-user-tie"></i> Broker Purchase Report
                                 </a>
                             </li>
@@ -371,32 +380,32 @@ else
                     {
                         <ul class="submenu">
                             <li class="nav-item">
-                                <a class="nav-link submenu-link" href="#">
+                                <a class="nav-link submenu-link" href="#" @onclick="CloseSidebar">
                                     <i class="fas fa-tachometer-alt"></i> Production DashBoard
                                 </a>
                             </li>
                             <li class="nav-item">
-                                <a class="nav-link submenu-link" href="#">
+                                <a class="nav-link submenu-link" href="#" @onclick="CloseSidebar">
                                     <i class="fas fa-calendar-day"></i> Daily Production
                                 </a>
                             </li>
                             <li class="nav-item">
-                                <a class="nav-link submenu-link" href="#">
+                                <a class="nav-link submenu-link" href="#" @onclick="CloseSidebar">
                                     <i class="fas fa-tags"></i> Batch Wise Production
                                 </a>
                             </li>
                             <li class="nav-item">
-                                <a class="nav-link submenu-link" href="#">
+                                <a class="nav-link submenu-link" href="#" @onclick="CloseSidebar">
                                     <i class="fas fa-file-alt"></i> Production Summary
                                 </a>
                             </li>
                             <li class="nav-item">
-                                <a class="nav-link submenu-link" href="#">
+                                <a class="nav-link submenu-link" href="#" @onclick="CloseSidebar">
                                     <i class="fas fa-box-open"></i> Raw Material issue
                                 </a>
                             </li>
                             <li class="nav-item">
-                                <a class="nav-link submenu-link" href="#">
+                                <a class="nav-link submenu-link" href="#" @onclick="CloseSidebar">
                                     <i class="fas fa-layer-group"></i> Heap Wise Issue
                                 </a>
                             </li>
@@ -421,37 +430,37 @@ else
                     {
                         <ul class="submenu">
                             <li class="nav-item">
-                                <a class="nav-link submenu-link" href="#">
+                                <a class="nav-link submenu-link" href="#" @onclick="CloseSidebar">
                                     <i class="fas fa-book"></i> Sales Journal
                                 </a>
                             </li>
                             <li class="nav-item">
-                                <a class="nav-link submenu-link" href="#">
+                                <a class="nav-link submenu-link" href="#" @onclick="CloseSidebar">
                                     <i class="fas fa-clipboard-list"></i> Sales Register
                                 </a>
                             </li>
                             <li class="nav-item">
-                                <a class="nav-link submenu-link" href="#">
+                                <a class="nav-link submenu-link" href="#" @onclick="CloseSidebar">
                                     <i class="fas fa-file-alt"></i> Item Sales Summary
                                 </a>
                             </li>
                             <li class="nav-item">
-                                <a class="nav-link submenu-link" href="#">
+                                <a class="nav-link submenu-link" href="#" @onclick="CloseSidebar">
                                     <i class="fas fa-journal-whills"></i> Item Sales Ledger
                                 </a>
                             </li>
                             <li class="nav-item">
-                                <a class="nav-link submenu-link" href="#">
+                                <a class="nav-link submenu-link" href="#" @onclick="CloseSidebar">
                                     <i class="fas fa-journal-whills"></i> Customer Sales Ledger
                                 </a>
                             </li>
                             <li class="nav-item">
-                                <a class="nav-link submenu-link" href="#">
+                                <a class="nav-link submenu-link" href="#" @onclick="CloseSidebar">
                                     <i class="fas fa-file-alt"></i> Customer Sale Summary
                                 </a>
                             </li>
                             <li class="nav-item">
-                                <a class="nav-link submenu-link" href="#">
+                                <a class="nav-link submenu-link" href="#" @onclick="CloseSidebar">
                                     <i class="fas fa-user-tie"></i> Broker Sales Report
                                 </a>
                             </li>
@@ -463,16 +472,21 @@ else
     </div>
 
     <!-- Main Content -->
-    <div class="main-content flex-grow-1">
+    <div class="main-content flex-grow-1 @(isSidebarOpen ? "" : "sidebar-closed")">
         <div class="topbar bg-white shadow-sm">
             <div class="d-flex justify-content-between align-items-center p-3">
-                <div class="page-title">
-                    <h4 class="mb-0 text-primary">
-                        @GetPageTitle()
-                    </h4>
+                <div class="d-flex align-items-center">
+                    <button class="btn btn-link text-primary me-2 sidebar-toggle-btn" @onclick="ToggleSidebar" aria-label="Toggle sidebar">
+                        <i class="fas fa-bars"></i>
+                    </button>
+                    <div class="page-title">
+                        <h4 class="mb-0 text-primary">
+                            @GetPageTitle()
+                        </h4>
+                    </div>
                 </div>
                 <div class="d-flex align-items-center">
-                    <span class="text-muted me-3">Welcome, @(currentUser?.ContactPerson ?? currentUser?.Email ?? "User")</span>
+                    <span class="text-muted me-3 d-none d-sm-inline">Welcome, @(currentUser?.ContactPerson ?? currentUser?.Email ?? "User")</span>
                     <div class="dropdown">
                         <button class="btn btn-outline-secondary dropdown-toggle" type="button" @onclick="ToggleDropdown" aria-expanded="@isDropdownOpen">
                             <i class="fas fa-user-circle me-2"></i>
@@ -549,6 +563,34 @@ else
         top: 0;
         background: linear-gradient(180deg, #2c3e50 0%, #34495e 100%);
         z-index: 1040;
+        transition: transform 0.3s ease-in-out;
+        box-shadow: 2px 0 10px rgba(0, 0, 0, 0.1);
+    }
+
+    /* Mobile sidebar styles */
+    @@media (max-width: 767.98px) {
+        .sidebar {
+            transform: translateX(-100%);
+        }
+
+        .sidebar.sidebar-open {
+            transform: translateX(0);
+        }
+
+        .sidebar-title {
+            display: inline;
+        }
+    }
+
+    /* Desktop: sidebar can be toggled */
+    @@media (min-width: 768px) {
+        .sidebar {
+            transform: translateX(-100%);
+        }
+
+        .sidebar.sidebar-open {
+            transform: translateX(0);
+        }
     }
 
     .sidebar-header {
@@ -694,6 +736,23 @@ else
         z-index: 1;
         overflow-x: hidden;
         max-width: calc(100vw - 250px);
+        transition: margin-left 0.3s ease-in-out, max-width 0.3s ease-in-out;
+    }
+
+    /* Desktop: adjust margin when sidebar is closed */
+    @@media (min-width: 768px) {
+        .main-content.sidebar-closed {
+            margin-left: 0;
+            max-width: 100vw;
+        }
+    }
+
+    /* Mobile: no left margin */
+    @@media (max-width: 767.98px) {
+        .main-content {
+            margin-left: 0;
+            max-width: 100vw;
+        }
     }
 
     .topbar {
@@ -772,6 +831,81 @@ else
         border-color: #6c757d;
         color: white;
     }
+
+    /* Sidebar overlay for mobile only */
+    .sidebar-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0, 0, 0, 0.5);
+        z-index: 1039;
+    }
+
+    /* Sidebar toggle button */
+    .sidebar-toggle-btn {
+        padding: 0.5rem;
+        font-size: 1.25rem;
+        border: none;
+        background: none;
+        cursor: pointer;
+    }
+
+    .sidebar-toggle-btn:hover {
+        opacity: 0.7;
+    }
+
+    .sidebar-toggle-btn:focus {
+        outline: none;
+        box-shadow: none;
+    }
+
+    /* Sidebar close button */
+    .sidebar-close-btn {
+        padding: 0.25rem 0.5rem;
+        font-size: 1.25rem;
+        border: none;
+        background: none;
+        cursor: pointer;
+        opacity: 0.8;
+    }
+
+    .sidebar-close-btn:hover {
+        opacity: 1;
+    }
+
+    .sidebar-close-btn:focus {
+        outline: none;
+        box-shadow: none;
+    }
+
+    /* Hide close button on mobile (use overlay instead) */
+    @@media (max-width: 767.98px) {
+        .sidebar-close-btn {
+            display: block;
+        }
+    }
+
+    /* Ensure sidebar header looks good on mobile */
+    @@media (max-width: 767.98px) {
+        .sidebar-header {
+            position: relative;
+        }
+    }
+
+    /* Improve nav link spacing on mobile */
+    @@media (max-width: 767.98px) {
+        .nav-link {
+            padding: 14px 20px;
+            font-size: 0.95rem;
+        }
+
+        .submenu-link {
+            padding-left: 45px !important;
+            font-size: 0.85rem;
+        }
+    }
 </style>
 
 @code {
@@ -780,6 +914,7 @@ else
     private bool isLoading = true;
     private bool isAuthenticated = false;
     private bool isDropdownOpen = false;
+    private bool isSidebarOpen = true; // Open by default on desktop
     private UserProfileInfo? currentUser;
     
     // Expandable group states
@@ -1008,6 +1143,18 @@ else
     private void CloseDropdown()
     {
         isDropdownOpen = false;
+        StateHasChanged();
+    }
+
+    private void ToggleSidebar()
+    {
+        isSidebarOpen = !isSidebarOpen;
+        StateHasChanged();
+    }
+
+    private void CloseSidebar()
+    {
+        isSidebarOpen = false;
         StateHasChanged();
     }
 

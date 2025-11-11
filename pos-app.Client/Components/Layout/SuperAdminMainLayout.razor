@@ -28,20 +28,29 @@ else if (!isAuthenticated)
 else
 {
     <div class="min-vh-100 d-flex">
+    <!-- Sidebar Overlay (Mobile only) -->
+    @if (isSidebarOpen)
+    {
+        <div class="sidebar-overlay d-md-none" @onclick="CloseSidebar"></div>
+    }
+    
     <!-- Sidebar -->
-    <div class="sidebar bg-dark text-white">
-        <div class="sidebar-header p-3">
-            <h5><i class="fas fa-shield-alt"></i> Super Admin</h5>
+    <div class="sidebar bg-dark text-white @(isSidebarOpen ? "sidebar-open" : "")">
+        <div class="sidebar-header p-3 d-flex justify-content-between align-items-center">
+            <h5 class="mb-0"><i class="fas fa-shield-alt"></i> <span class="sidebar-title">Super Admin</span></h5>
+            <button class="btn btn-link text-white sidebar-close-btn" @onclick="CloseSidebar" aria-label="Close sidebar">
+                <i class="fas fa-times"></i>
+            </button>
         </div>
         <nav class="sidebar-nav d-flex flex-column h-100">
             <ul class="nav flex-column flex-grow-1">
                 <li class="nav-item">
-                    <a class="nav-link" href="/superadmin/dashboard">
+                    <a class="nav-link" href="/superadmin/dashboard" @onclick="CloseSidebar">
                         <i class="fas fa-tachometer-alt"></i> Dashboard
                     </a>
                 </li>
                 <li class="nav-item">
-                    <a class="nav-link" href="/superadmin/profile">
+                    <a class="nav-link" href="/superadmin/profile" @onclick="CloseSidebar">
                         <i class="fas fa-user-circle"></i> Profile
                     </a>
                 </li>
@@ -50,12 +59,17 @@ else
     </div>
 
     <!-- Main Content -->
-    <div class="main-content flex-grow-1">
-        <div class="topbar bg-white shadow-sm">
+    <div class="main-content flex-grow-1 @(isSidebarOpen ? "" : "sidebar-closed")">
+        <div class="topbar bg-white shadow-sm @(isSidebarOpen ? "" : "sidebar-closed")">
             <div class="d-flex justify-content-between align-items-center p-3">
-                <h4 class="mb-0">Super Admin Panel</h4>
                 <div class="d-flex align-items-center">
-                    <span class="text-muted me-3">Welcome, @(AuthState.CurrentSuperAdmin?.FullName ?? AuthState.CurrentSuperAdmin?.Username ?? "Admin")</span>
+                    <button class="btn btn-link text-primary me-2 sidebar-toggle-btn" @onclick="ToggleSidebar" aria-label="Toggle sidebar">
+                        <i class="fas fa-bars"></i>
+                    </button>
+                    <h4 class="mb-0">Super Admin Panel</h4>
+                </div>
+                <div class="d-flex align-items-center">
+                    <span class="text-muted me-3 d-none d-sm-inline">Welcome, @(AuthState.CurrentSuperAdmin?.FullName ?? AuthState.CurrentSuperAdmin?.Username ?? "Admin")</span>
                     <div class="dropdown">
                         <button class="btn btn-outline-secondary dropdown-toggle" type="button" @onclick="ToggleDropdown" aria-expanded="@isDropdownOpen">
                             <i class="fas fa-user-circle me-2"></i>
@@ -130,11 +144,40 @@ else
     
     .sidebar {
         width: 250px;
-        height: 100vh;
+        min-height: 100vh;
         position: fixed;
         left: 0;
         top: 0;
         background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
+        z-index: 1040;
+        transition: transform 0.3s ease-in-out;
+        box-shadow: 2px 0 10px rgba(0, 0, 0, 0.1);
+    }
+
+    /* Mobile sidebar styles */
+    @@media (max-width: 767.98px) {
+        .sidebar {
+            transform: translateX(-100%);
+        }
+
+        .sidebar.sidebar-open {
+            transform: translateX(0);
+        }
+
+        .sidebar-title {
+            display: inline;
+        }
+    }
+
+    /* Desktop: sidebar can be toggled */
+    @@media (min-width: 768px) {
+        .sidebar {
+            transform: translateX(-100%);
+        }
+
+        .sidebar.sidebar-open {
+            transform: translateX(0);
+        }
     }
     
     .sidebar-header {
@@ -167,6 +210,22 @@ else
         display: flex;
         flex-direction: column;
         margin-left: 250px;
+        transition: margin-left 0.3s ease-in-out;
+    }
+
+    /* Desktop: adjust margin when sidebar is closed */
+    @@media (min-width: 768px) {
+        .main-content.sidebar-closed {
+            margin-left: 0;
+        }
+    }
+
+    /* Mobile: no left margin */
+    @@media (max-width: 767.98px) {
+        .main-content {
+            margin-left: 0;
+            max-width: 100vw;
+        }
     }
     
     .topbar {
@@ -178,6 +237,21 @@ else
         z-index: 1000;
         background: white;
         height: 73px; /* Fixed height for consistent spacing */
+        transition: left 0.3s ease-in-out;
+    }
+
+    /* Desktop: adjust topbar position when sidebar is closed */
+    @@media (min-width: 768px) {
+        .topbar.sidebar-closed {
+            left: 0;
+        }
+    }
+
+    /* Mobile: topbar full width */
+    @@media (max-width: 767.98px) {
+        .topbar {
+            left: 0;
+        }
     }
     
     .content {
@@ -283,12 +357,76 @@ else
     .dropdown-menu.show {
         display: block !important;
     }
+
+    /* Sidebar overlay for mobile only */
+    .sidebar-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0, 0, 0, 0.5);
+        z-index: 1039;
+    }
+
+    /* Sidebar toggle button */
+    .sidebar-toggle-btn {
+        padding: 0.5rem;
+        font-size: 1.25rem;
+        border: none;
+        background: none;
+        cursor: pointer;
+    }
+
+    .sidebar-toggle-btn:hover {
+        opacity: 0.7;
+    }
+
+    .sidebar-toggle-btn:focus {
+        outline: none;
+        box-shadow: none;
+    }
+
+    /* Sidebar close button */
+    .sidebar-close-btn {
+        padding: 0.25rem 0.5rem;
+        font-size: 1.25rem;
+        border: none;
+        background: none;
+        cursor: pointer;
+        opacity: 0.8;
+    }
+
+    .sidebar-close-btn:hover {
+        opacity: 1;
+    }
+
+    .sidebar-close-btn:focus {
+        outline: none;
+        box-shadow: none;
+    }
+
+    /* Ensure sidebar header looks good on mobile */
+    @@media (max-width: 767.98px) {
+        .sidebar-header {
+            position: relative;
+        }
+    }
+
+    /* Improve nav link spacing on mobile */
+    @@media (max-width: 767.98px) {
+        .sidebar-nav .nav-link {
+            padding: 14px 20px;
+            font-size: 0.95rem;
+        }
+    }
 </style>
 
 @code {
     private bool isLoading = true;
     private bool isAuthenticated = false;
     private bool isDropdownOpen = false;
+    private bool isSidebarOpen = true; // Open by default on desktop
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -439,6 +577,18 @@ else
     private void CloseDropdown()
     {
         isDropdownOpen = false;
+        StateHasChanged();
+    }
+
+    private void ToggleSidebar()
+    {
+        isSidebarOpen = !isSidebarOpen;
+        StateHasChanged();
+    }
+
+    private void CloseSidebar()
+    {
+        isSidebarOpen = false;
         StateHasChanged();
     }
 }

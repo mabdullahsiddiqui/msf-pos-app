@@ -69,10 +69,19 @@
 
 	protected override async Task OnInitializedAsync()
 	{
-		// Redirect if already authenticated
-		if (await AuthService.IsAuthenticatedAsync())
+		try
 		{
-			Navigation.NavigateTo("/dashboard", true);
+			// Redirect if already authenticated
+			if (await AuthService.IsAuthenticatedAsync())
+			{
+				Navigation.NavigateTo("/dashboard", true);
+			}
+		}
+		catch (Exception ex)
+		{
+			// Log error but don't prevent page from loading
+			Console.WriteLine($"Error checking authentication status: {ex.Message}");
+			// Continue to show login page if there's an error
 		}
 	}
 

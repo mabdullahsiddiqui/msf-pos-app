@@ -685,6 +685,7 @@ namespace pos_app.Client.Services
                 return new TransactionJournalResponse { Success = false, Message = $"Error: {ex.Message}" };
             }
         }
+
         // Customer Aging Report
         public async Task<CustomerAgingResponse> GetCustomerAgingAsync(
             string? fromAccount = null,

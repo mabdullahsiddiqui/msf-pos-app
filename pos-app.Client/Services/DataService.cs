@@ -828,6 +828,42 @@ namespace pos_app.Client.Services
             }
         }
 
+        // Item Purchase Register Report
+        public async Task<ItemPurchaseRegisterResponse> GetItemPurchaseRegisterAsync(
+            DateTime fromDate, 
+            DateTime toDate)
+        {
+            try
+            {
+                var client = await CreateAuthedClientAsync();
+                var url = "api/reports/item-purchase-register";
+                var queryParams = new List<string>();
+                
+                queryParams.Add($"fromDate={fromDate:yyyy-MM-dd}");
+                queryParams.Add($"toDate={toDate:yyyy-MM-dd}");
+                
+                if (queryParams.Any())
+                {
+                    url += "?" + string.Join("&", queryParams);
+                }
+
+                var response = await client.GetAsync(url);
+                if (response.IsSuccessStatusCode)
+                {
+                    var result = await response.Content.ReadFromJsonAsync<ItemPurchaseRegisterResponse>();
+                    return result ?? new ItemPurchaseRegisterResponse { Success = false, Message = "Invalid response from server" };
+                }
+
+                var errorContent = await response.Content.ReadAsStringAsync();
+                return new ItemPurchaseRegisterResponse { Success = false, Message = $"Failed to fetch item purchase register: {response.StatusCode}" };
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching item purchase register");
+                return new ItemPurchaseRegisterResponse { Success = false, Message = $"Error: {ex.Message}" };
+            }
+        }
+
         // Customer Aging Report
         public async Task<CustomerAgingResponse> GetCustomerAgingAsync(
             string? fromAccount = null,

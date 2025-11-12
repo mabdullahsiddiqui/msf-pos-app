@@ -1,0 +1,246 @@
+@page "/reports/item-purchase-register"
+@using pos_app.Client.Services
+@using pos_app.Client.Models
+@using pos_app.Client.Components.Shared
+@inject DataService DataService
+@inject SessionService SessionService
+
+<PageTitle>Item Purchase Register Report - POS System</PageTitle>
+
+<style>
+    .item-header-row {
+        background-color: #6f42c1 !important;
+        color: white !important;
+        font-weight: bold;
+    }
+    
+    .subtotal-row {
+        background-color: #6f42c1 !important;
+        color: white !important;
+        font-weight: bold;
+    }
+    
+    .register-table td {
+        vertical-align: top;
+    }
+    
+    .register-table .text-end {
+        text-align: right;
+    }
+    
+    /* Ensure header text is black */
+    .register-table thead th {
+        color: #000 !important;
+    }
+</style>
+
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+
+            <!-- Date Filter -->
+            <FilterCard Title="Item Purchase Register (Date to Date)" IconClass="fas fa-clipboard-list">
+                <div class="row mb-3">
+                    <DateInput Label="From Date:" Id="fromDate" @bind-Value="fromDate" MinDate="@minDate" />
+                    <DateInput Label="Upto Date:" Id="toDate" @bind-Value="toDate" />
+                    <div class="col-md-3 d-flex align-items-end gap-2">
+                        <ActionButton Text="Preview" IconClass="fas fa-search" OnClick="LoadItemPurchaseRegister" IsLoading="@isLoading" IsDisabled="@isLoading" />
+                    </div>
+                </div>
+            </FilterCard>
+
+            <!-- Loading Indicator -->
+            @if (isLoading)
+            {
+                <LoadingSpinner Message="Generating item purchase register report..." />
+            }
+
+            <!-- Error Message -->
+            <ErrorAlert Message="@errorMessage" />
+
+            <!-- Report Data -->
+            @if (itemPurchaseRegisterData != null && itemPurchaseRegisterData.Success)
+            {
+                <ReportTable FilterableColumns="@(new List<int> { 0, 1 })">
+                    <HeaderContent>
+                        <ReportTitleHeader Title="Item Purchase Register" IconClass="fas fa-clipboard-list">
+                            <DateRangeContent>
+                                From: @itemPurchaseRegisterData.FromDate.ToString("dd/MM/yyyy") 
+                                To Date: @itemPurchaseRegisterData.ToDate.ToString("dd/MM/yyyy")
+                            </DateRangeContent>
+                        </ReportTitleHeader>
+                    </HeaderContent>
+                    
+                    <SummaryCards>
+                        <SummaryCard Title="Total Qty" Value="@CurrencyHelper.FormatNumber(itemPurchaseRegisterData.GrandTotalQty)" BgColor="info" ColumnClass="col-md-4" />
+                        <SummaryCard Title="Total Weight" Value="@CurrencyHelper.FormatNumber(itemPurchaseRegisterData.GrandTotalWeight)" BgColor="warning" ColumnClass="col-md-4" />
+                        <SummaryCard Title="Total Amount" Value="@CurrencyHelper.FormatNumber(itemPurchaseRegisterData.GrandTotalAmount)" BgColor="success" ColumnClass="col-md-4" />
+                    </SummaryCards>
+
+                    <BodyContent>
+                        <div class="table-responsive">
+                            <table class="table table-bordered register-table">
+                                <thead>
+                                    <tr>
+                                        <th>Invoice</th>
+                                        <th>Date</th>
+                                        <th class="text-end">Qty.</th>
+                                        <th class="text-end">Total Weight</th>
+                                        <th class="text-end">Rate.</th>
+                                        <th>As per</th>
+                                        <th class="text-end">Net Amt.</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @if (itemPurchaseRegisterData.Data.Any())
+                                    {
+                                        @foreach (var item in itemPurchaseRegisterData.Data)
+                                        {
+                                            @if (item.IsItemHeader)
+                                            {
+                                                <tr class="item-header-row">
+                                                    <td colspan="7">
+                                                        <strong>Item Name & Description: @item.ItemName.Trim()@(string.IsNullOrWhiteSpace(item.Variety) ? "" : " " + item.Variety.Trim())</strong>
+                                                        &nbsp;&nbsp;&nbsp;
+                                                        <strong>Pakcing @CurrencyHelper.FormatNumber(item.Packing) @(string.IsNullOrWhiteSpace(item.AsPer) || (item.AsPer != "Kgs" && item.AsPer != "Mounds") ? "Unit" : "Kgs")</strong>
+                                                    </td>
+                                                </tr>
+                                            }
+                                            else if (item.IsSubTotal)
+                                            {
+                                                <tr class="subtotal-row">
+                                                    <td colspan="2"><strong>Total</strong></td>
+                                                    <td class="text-end">
+                                                        <strong>
+                                                            @if (item.Qty % 1 == 0)
+                                                            {
+                                                                @((int)item.Qty)
+                                                            }
+                                                            else
+                                                            {
+                                                                @CurrencyHelper.FormatNumber(item.Qty)
+                                                            }
+                                                        </strong>
+                                                    </td>
+                                                    <td class="text-end"><strong>@CurrencyHelper.FormatNumber(item.TotalWeight)</strong></td>
+                                                    <td class="text-end"></td>
+                                                    <td></td>
+                                                    <td class="text-end"><strong>@CurrencyHelper.FormatNumber(item.NetAmt)</strong></td>
+                                                </tr>
+                                            }
+                                            else
+                                            {
+                                                <tr>
+                                                    <td>@item.InvoiceNo</td>
+                                                    <td>
+                                                        @if (item.Date.HasValue)
+                                                        {
+                                                            @item.Date.Value.ToString("dd/MM/yyyy")
+                                                        }
+                                                    </td>
+                                                    <td class="text-end">
+                                                        @if (item.Qty % 1 == 0)
+                                                        {
+                                                            @((int)item.Qty)
+                                                        }
+                                                        else
+                                                        {
+                                                            @CurrencyHelper.FormatNumber(item.Qty)
+                                                        }
+                                                    </td>
+                                                    <td class="text-end">@CurrencyHelper.FormatNumber(item.TotalWeight)</td>
+                                                    <td class="text-end">@CurrencyHelper.FormatNumber(item.Rate)</td>
+                                                    <td>@item.AsPer</td>
+                                                    <td class="text-end">@CurrencyHelper.FormatNumber(item.NetAmt)</td>
+                                                </tr>
+                                            }
+                                        }
+                                    }
+                                    else
+                                    {
+                                        <tr>
+                                            <td colspan="7" class="text-center text-muted">No purchase transactions found for the selected date range.</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    </BodyContent>
+
+                    <FooterContent>
+                        <div class="row">
+                            <div class="col-md-4">
+                                <strong>Total Qty: @CurrencyHelper.FormatNumber(itemPurchaseRegisterData.GrandTotalQty)</strong>
+                            </div>
+                            <div class="col-md-4">
+                                <strong>Total Weight: @CurrencyHelper.FormatNumber(itemPurchaseRegisterData.GrandTotalWeight)</strong>
+                            </div>
+                            <div class="col-md-4">
+                                <strong>Total Amount: @CurrencyHelper.FormatNumber(itemPurchaseRegisterData.GrandTotalAmount)</strong>
+                            </div>
+                        </div>
+                    </FooterContent>
+                </ReportTable>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    private DateTime fromDate;
+    private DateTime toDate = DateTime.Now;
+    private ItemPurchaseRegisterResponse? itemPurchaseRegisterData;
+    private bool isLoading = false;
+    private string errorMessage = string.Empty;
+    private DateTime? minDate;
+    
+    protected override async Task OnInitializedAsync()
+    {
+        // Get minimum date from session
+        minDate = await SessionService.GetMinDateAsync();
+        
+        // Set fromDate to session start_date if available, otherwise use current month start
+        if (minDate.HasValue)
+        {
+            fromDate = minDate.Value;
+        }
+        else
+        {
+            fromDate = new DateTime(DateTime.Now.Year, DateTime.Now.Month, 1);
+        }
+        
+        toDate = DateTime.Now;
+    }
+
+    private async Task LoadItemPurchaseRegister()
+    {
+        if (fromDate > toDate)
+        {
+            errorMessage = "From Date cannot be greater than To Date.";
+            return;
+        }
+
+        isLoading = true;
+        errorMessage = string.Empty;
+        itemPurchaseRegisterData = null;
+
+        try
+        {
+            itemPurchaseRegisterData = await DataService.GetItemPurchaseRegisterAsync(fromDate, toDate);
+            
+            if (!itemPurchaseRegisterData.Success)
+            {
+                errorMessage = itemPurchaseRegisterData.Message;
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"An error occurred while loading the item purchase register: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+}
+

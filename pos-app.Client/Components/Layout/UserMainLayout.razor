@@ -450,6 +450,11 @@ else
                                 </a>
                             </li>
                             <li class="nav-item">
+                                <a class="nav-link submenu-link @GetActiveClass("/reports/item-sales-register")" href="/reports/item-sales-register" @onclick="CloseSidebar">
+                                    <i class="fas fa-clipboard-list"></i> Item Sales Register
+                                </a>
+                            </li>
+                            <li class="nav-item">
                                 <a class="nav-link submenu-link" href="#" @onclick="CloseSidebar">
                                     <i class="fas fa-journal-whills"></i> Customer Sales Ledger
                                 </a>
@@ -1050,7 +1055,8 @@ else
         if (currentPath.Contains("/reports/sales-journal") ||
             currentPath.Contains("/reports/sales-register") ||
             currentPath.Contains("/reports/item-sales-summary") ||
-            currentPath.Contains("/reports/item-sales-ledger"))
+            currentPath.Contains("/reports/item-sales-ledger") ||
+            currentPath.Contains("/reports/item-sales-register"))
         {
             isSalesReportsExpanded = true;
         }
@@ -1229,6 +1235,7 @@ else
             var path when path.Contains("/reports/sales-register") => "Sales Register Report",
             var path when path.Contains("/reports/item-sales-summary") => "Item Sales Summary Report",
             var path when path.Contains("/reports/item-sales-ledger") => "Item Sales Ledger Report",
+            var path when path.Contains("/reports/item-sales-register") => "Item Sales Register Report",
             var path when path.Contains("/reports/item-purchase-register") => "Item Purchase Register Report",
             var path when path.Contains("/reports/item-purchase-summary") => "Item Purchase Summary Report",
             var path when path.Contains("/reports/supplier-tax-ledger") => "Supplier Tax Ledger Report",

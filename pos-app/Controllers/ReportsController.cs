@@ -3132,6 +3132,200 @@ namespace pos_app.Controllers
             }
         }
 
+        // Item Sales Register Report
+        [HttpGet("item-sales-register")]
+        public async Task<ActionResult<ItemSalesRegisterResponse>> GetItemSalesRegister(
+            [FromQuery] DateTime fromDate, 
+            [FromQuery] DateTime toDate)
+        {
+            var stopwatch = Stopwatch.StartNew();
+            try
+            {
+                var userId = GetCurrentUserId();
+                var user = await _authService.GetActiveUserAsync(userId);
+                
+                if (user == null)
+                {
+                    return BadRequest(new ItemSalesRegisterResponse
+                    {
+                        Success = false,
+                        Message = "No active database connection found. Please set up your database connection first."
+                    });
+                }
+
+                var fromDateString = fromDate.ToString("yyyy/MM/dd");
+                var toDateString = toDate.ToString("yyyy/MM/dd");
+
+                // Item Sales Register SQL query - join sale_inv with sub_sinv, ordered by item
+                var itemSalesRegisterQuery = $@"
+                    SELECT 
+                        si.inv_no as InvoiceNo,
+                        si.inv_date as Date,
+                        ss.qty as Qty,
+                        ss.total_wght as TotalWeight,
+                        ss.rate as Rate,
+                        RTRIM(ss.as_per) as AsPer,
+                        ss.gros_amt as GrossAmount,
+                        ss.disc_amt as Discount,
+                        ss.grand_tot as NetAmount,
+                        RTRIM(ss.item_name) as ItemName,
+                        RTRIM(ss.variety) as Variety,
+                        ss.packing as Packing,
+                        RTRIM(ss.status) as Status
+                    FROM sale_inv si
+                    INNER JOIN sub_sinv ss ON si.inv_no = ss.inv_no AND si.inv_type = ss.inv_type
+                    WHERE si.inv_date >= '{fromDateString}' 
+                      AND si.inv_date <= '{toDateString}'
+                    ORDER BY ss.item_name, ss.variety, ss.packing, ss.status, si.inv_date, si.inv_no";
+
+                var results = await _dataAccessService.ExecuteQueryAsync(user, itemSalesRegisterQuery, commandTimeout: 120);
+                
+                var itemSalesRegisterItems = new List<ItemSalesRegisterItem>();
+                decimal grandTotalQty = 0;
+                decimal grandTotalWeight = 0;
+                decimal grandTotalGrossAmount = 0;
+                decimal grandTotalDiscount = 0;
+                decimal grandTotalNetAmount = 0;
+
+                // Group results by item (ItemName + Variety + Packing + Status)
+                var itemGroups = results
+                    .GroupBy(row => new
+                    {
+                        ItemName = row.ContainsKey("ItemName") ? row["ItemName"]?.ToString()?.Trim() ?? "" : "",
+                        Variety = row.ContainsKey("Variety") ? row["Variety"]?.ToString()?.Trim() ?? "" : "",
+                        Packing = row.ContainsKey("Packing") && decimal.TryParse(row["Packing"]?.ToString(), out var p) ? p : 0,
+                        Status = row.ContainsKey("Status") ? row["Status"]?.ToString()?.Trim() ?? "" : ""
+                    })
+                    .OrderBy(g => g.Key.ItemName)
+                    .ThenBy(g => g.Key.Variety)
+                    .ThenBy(g => g.Key.Packing)
+                    .ThenBy(g => g.Key.Status)
+                    .ToList();
+
+                foreach (var itemGroup in itemGroups)
+                {
+                    var itemName = itemGroup.Key.ItemName;
+                    var variety = itemGroup.Key.Variety;
+                    var packing = itemGroup.Key.Packing;
+                    var status = itemGroup.Key.Status;
+
+                    // Get AsPer from first transaction in the group for header display
+                    var firstRow = itemGroup.FirstOrDefault();
+                    var asPerForHeader = firstRow != null && firstRow.ContainsKey("AsPer") 
+                        ? firstRow["AsPer"]?.ToString()?.Trim() ?? "Unit" 
+                        : "Unit";
+
+                    // Add item header row
+                    itemSalesRegisterItems.Add(new ItemSalesRegisterItem
+                    {
+                        ItemName = itemName,
+                        Variety = variety,
+                        Packing = packing,
+                        Status = status,
+                        AsPer = asPerForHeader,
+                        IsItemHeader = true,
+                        IsSubTotal = false
+                    });
+
+                    // Process transactions for this item
+                    decimal itemTotalQty = 0;
+                    decimal itemTotalWeight = 0;
+                    decimal itemTotalGrossAmount = 0;
+                    decimal itemTotalDiscount = 0;
+                    decimal itemTotalNetAmount = 0;
+
+                    foreach (var row in itemGroup.OrderBy(r => 
+                        r.ContainsKey("Date") && DateTime.TryParse(r["Date"]?.ToString(), out var d) ? d : DateTime.MinValue)
+                        .ThenBy(r => r.ContainsKey("InvoiceNo") ? r["InvoiceNo"]?.ToString() ?? "" : ""))
+                    {
+                        var invoiceNo = row.ContainsKey("InvoiceNo") ? row["InvoiceNo"]?.ToString()?.Trim() ?? "" : "";
+                        var date = row.ContainsKey("Date") && DateTime.TryParse(row["Date"]?.ToString(), out var d) ? d : (DateTime?)null;
+                        var qty = row.ContainsKey("Qty") && decimal.TryParse(row["Qty"]?.ToString(), out var q) ? q : 0;
+                        var totalWeight = row.ContainsKey("TotalWeight") && decimal.TryParse(row["TotalWeight"]?.ToString(), out var w) ? w : 0;
+                        var rate = row.ContainsKey("Rate") && decimal.TryParse(row["Rate"]?.ToString(), out var r) ? r : 0;
+                        var asPer = row.ContainsKey("AsPer") ? row["AsPer"]?.ToString()?.Trim() ?? "" : "";
+                        var grossAmount = row.ContainsKey("GrossAmount") && decimal.TryParse(row["GrossAmount"]?.ToString(), out var ga) ? ga : 0;
+                        var discount = row.ContainsKey("Discount") && decimal.TryParse(row["Discount"]?.ToString(), out var disc) ? disc : 0;
+                        var netAmount = row.ContainsKey("NetAmount") && decimal.TryParse(row["NetAmount"]?.ToString(), out var na) ? na : 0;
+
+                        // Add transaction row
+                        itemSalesRegisterItems.Add(new ItemSalesRegisterItem
+                        {
+                            InvoiceNo = invoiceNo,
+                            Date = date,
+                            Qty = qty,
+                            TotalWeight = totalWeight,
+                            Rate = rate,
+                            AsPer = asPer,
+                            GrossAmount = grossAmount,
+                            Discount = discount,
+                            NetAmount = netAmount,
+                            ItemName = itemName,
+                            Variety = variety,
+                            Packing = packing,
+                            Status = status,
+                            IsItemHeader = false,
+                            IsSubTotal = false
+                        });
+
+                        itemTotalQty += qty;
+                        itemTotalWeight += totalWeight;
+                        itemTotalGrossAmount += grossAmount;
+                        itemTotalDiscount += discount;
+                        itemTotalNetAmount += netAmount;
+                    }
+
+                    // Add subtotal row for this item
+                    itemSalesRegisterItems.Add(new ItemSalesRegisterItem
+                    {
+                        ItemName = itemName,
+                        Variety = variety,
+                        Packing = packing,
+                        Status = status,
+                        Qty = itemTotalQty,
+                        TotalWeight = itemTotalWeight,
+                        GrossAmount = itemTotalGrossAmount,
+                        Discount = itemTotalDiscount,
+                        NetAmount = itemTotalNetAmount,
+                        IsItemHeader = false,
+                        IsSubTotal = true
+                    });
+
+                    grandTotalQty += itemTotalQty;
+                    grandTotalWeight += itemTotalWeight;
+                    grandTotalGrossAmount += itemTotalGrossAmount;
+                    grandTotalDiscount += itemTotalDiscount;
+                    grandTotalNetAmount += itemTotalNetAmount;
+                }
+
+                stopwatch.Stop();
+
+                return Ok(new ItemSalesRegisterResponse
+                {
+                    Success = true,
+                    Message = "Item Sales Register retrieved successfully",
+                    Data = itemSalesRegisterItems,
+                    FromDate = fromDate,
+                    ToDate = toDate,
+                    GrandTotalQty = grandTotalQty,
+                    GrandTotalWeight = grandTotalWeight,
+                    GrandTotalGrossAmount = grandTotalGrossAmount,
+                    GrandTotalDiscount = grandTotalDiscount,
+                    GrandTotalNetAmount = grandTotalNetAmount
+                });
+            }
+            catch (Exception ex)
+            {
+                stopwatch.Stop();
+                _logger.LogError(ex, "Error getting item sales register");
+                return StatusCode(500, new ItemSalesRegisterResponse
+                {
+                    Success = false,
+                    Message = $"Internal server error: {ex.Message}"
+                });
+            }
+        }
+
         // Supplier Purchase Ledger Report
         [HttpGet("supplier-purchase-ledger")]
         public async Task<ActionResult<SupplierPurchaseLedgerResponse>> GetSupplierPurchaseLedger(

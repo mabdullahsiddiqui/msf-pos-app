@@ -828,6 +828,52 @@ namespace pos_app.Client.Services
             }
         }
 
+        // Supplier Purchase Ledger Report
+        public async Task<SupplierPurchaseLedgerResponse> GetSupplierPurchaseLedgerAsync(
+            DateTime fromDate, 
+            DateTime toDate, 
+            string? supplierAccount = null,
+            string reportType = "Summary",
+            bool allSuppliers = true)
+        {
+            try
+            {
+                var client = await CreateAuthedClientAsync();
+                var url = "api/reports/supplier-purchase-ledger";
+                var queryParams = new List<string>();
+                
+                queryParams.Add($"fromDate={fromDate:yyyy-MM-dd}");
+                queryParams.Add($"toDate={toDate:yyyy-MM-dd}");
+                queryParams.Add($"reportType={Uri.EscapeDataString(reportType)}");
+                queryParams.Add($"allSuppliers={allSuppliers}");
+                
+                if (!string.IsNullOrEmpty(supplierAccount))
+                {
+                    queryParams.Add($"supplierAccount={Uri.EscapeDataString(supplierAccount)}");
+                }
+                
+                if (queryParams.Any())
+                {
+                    url += "?" + string.Join("&", queryParams);
+                }
+
+                var response = await client.GetAsync(url);
+                if (response.IsSuccessStatusCode)
+                {
+                    var result = await response.Content.ReadFromJsonAsync<SupplierPurchaseLedgerResponse>();
+                    return result ?? new SupplierPurchaseLedgerResponse { Success = false, Message = "Invalid response from server" };
+                }
+
+                var errorContent = await response.Content.ReadAsStringAsync();
+                return new SupplierPurchaseLedgerResponse { Success = false, Message = $"Failed to fetch supplier purchase ledger: {response.StatusCode}" };
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching supplier purchase ledger");
+                return new SupplierPurchaseLedgerResponse { Success = false, Message = $"Error: {ex.Message}" };
+            }
+        }
+
         // Item Purchase Register Report
         public async Task<ItemPurchaseRegisterResponse> GetItemPurchaseRegisterAsync(
             DateTime fromDate, 

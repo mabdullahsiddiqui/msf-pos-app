@@ -2458,6 +2458,242 @@ namespace pos_app.Controllers
             }
         }
 
+        // Supplier Purchase Ledger Report
+        [HttpGet("supplier-purchase-ledger")]
+        public async Task<ActionResult<SupplierPurchaseLedgerResponse>> GetSupplierPurchaseLedger(
+            [FromQuery] DateTime fromDate, 
+            [FromQuery] DateTime toDate,
+            [FromQuery] string? supplierAccount = null,
+            [FromQuery] string reportType = "Summary",
+            [FromQuery] bool allSuppliers = true)
+        {
+            var stopwatch = Stopwatch.StartNew();
+            try
+            {
+                var userId = GetCurrentUserId();
+                var user = await _authService.GetActiveUserAsync(userId);
+                
+                if (user == null)
+                {
+                    return BadRequest(new SupplierPurchaseLedgerResponse
+                    {
+                        Success = false,
+                        Message = "No active database connection found. Please set up your database connection first."
+                    });
+                }
+
+                var fromDateString = fromDate.ToString("yyyy/MM/dd");
+                var toDateString = toDate.ToString("yyyy/MM/dd");
+
+                // Build supplier filter
+                string supplierFilter = "";
+                string supplierName = "";
+                
+                if (!allSuppliers && !string.IsNullOrWhiteSpace(supplierAccount))
+                {
+                    supplierFilter = $"AND pi.ac_code = '{supplierAccount.Trim().Replace("'", "''")}'";
+                    
+                    // Get supplier name
+                    var supplierNameQuery = $@"
+                        SELECT TOP 1 RTRIM(ac_name) as SupplierName
+                        FROM pur_inv
+                        WHERE ac_code = '{supplierAccount.Trim().Replace("'", "''")}'
+                        AND inv_date >= '{fromDateString}' 
+                        AND inv_date <= '{toDateString}'
+                    ";
+                    var supplierNameResult = await _dataAccessService.ExecuteQueryAsync(user, supplierNameQuery, commandTimeout: 30);
+                    if (supplierNameResult.Any() && supplierNameResult[0].ContainsKey("SupplierName"))
+                    {
+                        supplierName = supplierNameResult[0]["SupplierName"]?.ToString()?.Trim() ?? "";
+                    }
+                }
+
+                // Base query for both Detail and Summary modes
+                string baseQuery;
+                
+                if (reportType == "Detail")
+                {
+                    // Detail mode: Show individual invoice lines
+                    baseQuery = $@"
+                        SELECT 
+                            pi.ac_code as SupplierAccount,
+                            RTRIM(pi.ac_name) as SupplierName,
+                            pi.inv_no as InvoiceNo,
+                            pi.inv_date as Date,
+                            RTRIM(pi.vehicle_no) as VehicleNo,
+                            (sp.qty_jute + sp.qty_pp_100 + sp.qty_pp_50) as Qty,
+                            sp.total_wght as TotalWeight,
+                            sp.rate as Rate,
+                            RTRIM(sp.as_per) as AsPer,
+                            sp.grand_tot as NetAmt,
+                            RTRIM(sp.item_name) as ItemName,
+                            RTRIM(sp.variety) as ItemDescription,
+                            sp.packing as Packing
+                        FROM pur_inv pi
+                        INNER JOIN sub_pinv sp ON pi.inv_no = sp.inv_no AND pi.inv_type = sp.inv_type
+                        WHERE pi.inv_date >= '{fromDateString}' 
+                          AND pi.inv_date <= '{toDateString}'
+                          {supplierFilter}
+                        ORDER BY pi.ac_code, pi.ac_name, pi.inv_date, pi.inv_no, sp.sr_no";
+                }
+                else
+                {
+                    // Summary mode: Group by supplier and item
+                    baseQuery = $@"
+                        SELECT 
+                            pi.ac_code as SupplierAccount,
+                            RTRIM(pi.ac_name) as SupplierName,
+                            RTRIM(sp.item_code) as ItemCode,
+                            RTRIM(sp.item_name) as ItemName,
+                            sp.packing as PackSize,
+                            SUM(sp.qty_jute + sp.qty_pp_100 + sp.qty_pp_50) as Qty,
+                            SUM(sp.total_wght) as Weight,
+                            SUM(sp.grand_tot) as Amount,
+                            CASE 
+                                WHEN SUM(sp.qty_jute + sp.qty_pp_100 + sp.qty_pp_50) > 0 
+                                THEN SUM(sp.grand_tot) / SUM(sp.qty_jute + sp.qty_pp_100 + sp.qty_pp_50)
+                                ELSE 0 
+                            END as AverageRate,
+                            CASE 
+                                WHEN SUM(sp.qty_jute + sp.qty_pp_100 + sp.qty_pp_50) > 0 
+                                THEN SUM(sp.total_wght) / SUM(sp.qty_jute + sp.qty_pp_100 + sp.qty_pp_50)
+                                ELSE 0 
+                            END as AverageKgs
+                        FROM pur_inv pi
+                        INNER JOIN sub_pinv sp ON pi.inv_no = sp.inv_no AND pi.inv_type = sp.inv_type
+                        WHERE pi.inv_date >= '{fromDateString}' 
+                          AND pi.inv_date <= '{toDateString}'
+                          {supplierFilter}
+                        GROUP BY pi.ac_code, pi.ac_name, sp.item_code, sp.item_name, sp.packing
+                        ORDER BY pi.ac_code, pi.ac_name, sp.item_name, sp.packing";
+                }
+
+                var results = await _dataAccessService.ExecuteQueryAsync(user, baseQuery, commandTimeout: 120);
+                
+                var groups = new Dictionary<string, SupplierPurchaseLedgerGroup>();
+                decimal grandTotalQty = 0;
+                decimal grandTotalWeight = 0;
+                decimal grandTotalAmount = 0;
+
+                foreach (var row in results)
+                {
+                    var supplierAcc = row.ContainsKey("SupplierAccount") ? row["SupplierAccount"]?.ToString()?.Trim() ?? "" : "";
+                    var supplierNm = row.ContainsKey("SupplierName") ? row["SupplierName"]?.ToString()?.Trim() ?? "" : "";
+                    
+                    if (string.IsNullOrEmpty(supplierAcc))
+                        continue;
+
+                    // Get or create group
+                    if (!groups.ContainsKey(supplierAcc))
+                    {
+                        groups[supplierAcc] = new SupplierPurchaseLedgerGroup
+                        {
+                            SupplierAccount = supplierAcc,
+                            SupplierName = supplierNm
+                        };
+                    }
+
+                    var group = groups[supplierAcc];
+
+                    if (reportType == "Detail")
+                    {
+                        var invoiceNo = row.ContainsKey("InvoiceNo") ? row["InvoiceNo"]?.ToString()?.Trim() ?? "" : "";
+                        var date = row.ContainsKey("Date") && DateTime.TryParse(row["Date"]?.ToString(), out var d) ? d : (DateTime?)null;
+                        var vehicleNo = row.ContainsKey("VehicleNo") ? row["VehicleNo"]?.ToString()?.Trim() ?? "" : "";
+                        var qty = row.ContainsKey("Qty") && decimal.TryParse(row["Qty"]?.ToString(), out var q) ? q : 0;
+                        var totalWeight = row.ContainsKey("TotalWeight") && decimal.TryParse(row["TotalWeight"]?.ToString(), out var w) ? w : 0;
+                        var rate = row.ContainsKey("Rate") && decimal.TryParse(row["Rate"]?.ToString(), out var r) ? r : 0;
+                        var asPer = row.ContainsKey("AsPer") ? row["AsPer"]?.ToString()?.Trim() ?? "" : "";
+                        var netAmt = row.ContainsKey("NetAmt") && decimal.TryParse(row["NetAmt"]?.ToString(), out var a) ? a : 0;
+                        var itemName = row.ContainsKey("ItemName") ? row["ItemName"]?.ToString()?.Trim() ?? "" : "";
+                        var itemDesc = row.ContainsKey("ItemDescription") ? row["ItemDescription"]?.ToString()?.Trim() ?? "" : "";
+                        var packing = row.ContainsKey("Packing") && decimal.TryParse(row["Packing"]?.ToString(), out var p) ? p : 0;
+
+                        group.DetailItems.Add(new SupplierPurchaseLedgerDetailItem
+                        {
+                            InvoiceNo = invoiceNo,
+                            Date = date,
+                            VehicleNo = vehicleNo,
+                            Qty = qty,
+                            TotalWeight = totalWeight,
+                            Rate = rate,
+                            AsPer = asPer,
+                            NetAmt = netAmt,
+                            ItemName = itemName,
+                            ItemDescription = itemDesc,
+                            Packing = packing
+                        });
+
+                        group.TotalQty += qty;
+                        group.TotalWeight += totalWeight;
+                        group.TotalAmount += netAmt;
+                    }
+                    else
+                    {
+                        var itemCode = row.ContainsKey("ItemCode") ? row["ItemCode"]?.ToString()?.Trim() ?? "" : "";
+                        var itemName = row.ContainsKey("ItemName") ? row["ItemName"]?.ToString()?.Trim() ?? "" : "";
+                        var packSize = row.ContainsKey("PackSize") && decimal.TryParse(row["PackSize"]?.ToString(), out var ps) ? ps : 0;
+                        var qty = row.ContainsKey("Qty") && decimal.TryParse(row["Qty"]?.ToString(), out var q) ? q : 0;
+                        var weight = row.ContainsKey("Weight") && decimal.TryParse(row["Weight"]?.ToString(), out var w) ? w : 0;
+                        var amount = row.ContainsKey("Amount") && decimal.TryParse(row["Amount"]?.ToString(), out var a) ? a : 0;
+                        var avgRate = row.ContainsKey("AverageRate") && decimal.TryParse(row["AverageRate"]?.ToString(), out var ar) ? ar : 0;
+                        var avgKgs = row.ContainsKey("AverageKgs") && decimal.TryParse(row["AverageKgs"]?.ToString(), out var ak) ? ak : 0;
+
+                        group.SummaryItems.Add(new SupplierPurchaseLedgerSummaryItem
+                        {
+                            ItemCode = itemCode,
+                            ItemName = itemName,
+                            PackSize = packSize,
+                            Qty = qty,
+                            Weight = weight,
+                            Amount = amount,
+                            AverageRate = avgRate,
+                            AverageKgs = avgKgs
+                        });
+
+                        group.TotalQty += qty;
+                        group.TotalWeight += weight;
+                        group.TotalAmount += amount;
+                    }
+                }
+
+                // Calculate grand totals
+                foreach (var group in groups.Values)
+                {
+                    grandTotalQty += group.TotalQty;
+                    grandTotalWeight += group.TotalWeight;
+                    grandTotalAmount += group.TotalAmount;
+                }
+
+                stopwatch.Stop();
+
+                return Ok(new SupplierPurchaseLedgerResponse
+                {
+                    Success = true,
+                    Message = "Supplier Purchase Ledger retrieved successfully",
+                    Data = groups.Values.ToList(),
+                    FromDate = fromDate,
+                    ToDate = toDate,
+                    SupplierAccount = supplierAccount ?? "",
+                    SupplierName = supplierName,
+                    ReportType = reportType,
+                    GrandTotalQty = grandTotalQty,
+                    GrandTotalWeight = grandTotalWeight,
+                    GrandTotalAmount = grandTotalAmount
+                });
+            }
+            catch (Exception ex)
+            {
+                stopwatch.Stop();
+                _logger.LogError(ex, "Error getting supplier purchase ledger");
+                return StatusCode(500, new SupplierPurchaseLedgerResponse
+                {
+                    Success = false,
+                    Message = $"Internal server error: {ex.Message}"
+                });
+            }
+        }
+
         // Customer Aging Report
         [HttpGet("customer-aging")]
         public async Task<ActionResult<CustomerAgingResponse>> GetCustomerAging(

@@ -1,0 +1,360 @@
+@page "/reports/supplier-purchase-ledger"
+@using pos_app.Client.Services
+@using pos_app.Client.Models
+@using pos_app.Client.Components.Shared
+@inject DataService DataService
+@inject SessionService SessionService
+
+<PageTitle>Supplier Purchase Ledger Report - POS System</PageTitle>
+
+<style>
+    .ledger-table td {
+        vertical-align: top;
+    }
+    
+    .ledger-table .text-end {
+        text-align: right;
+    }
+    
+    /* Ensure header text is black */
+    .ledger-table thead th {
+        color: #000 !important;
+    }
+
+    .supplier-header-row {
+        background-color: #e9ecef !important;
+        font-weight: bold;
+    }
+    
+    .total-row {
+        background-color: #f8f9fa !important;
+        font-weight: bold;
+    }
+</style>
+
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+
+            <!-- Supplier Selection and Date Filter -->
+            <FilterCard Title="Supplier Purchase Ledger (Date to Date)" IconClass="fas fa-journal-whills">
+                <div class="row mb-3">
+                    <div class="col-md-12 mb-3">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="allSuppliers" @bind="allSuppliers" @onchange="@(() => { if (allSuppliers) { supplierAccount = ""; } })" />
+                            <label class="form-check-label" for="allSuppliers">
+                                All Suppliers
+                            </label>
+                        </div>
+                    </div>
+                    <SearchableAccountInput Label="Supplier's A/C:" Id="supplierAccount" Value="@supplierAccount" ValueChanged="@OnSupplierAccountChanged" Placeholder="Search suppliers..." ColumnClass="col-12 col-md-3" IsDisabled="@allSuppliers" />
+                    <DateInput Label="From Date:" Id="fromDate" @bind-Value="fromDate" MinDate="@minDate" ColumnClass="col-12 col-md-3" />
+                    <DateInput Label="Upto Date:" Id="toDate" @bind-Value="toDate" ColumnClass="col-12 col-md-3" />
+                </div>
+
+                <div class="row mb-3">
+                    <ReportTypeSelector SelectedValue="@reportType" SelectedValueChanged="@((string value) => reportType = value)" 
+                        Options="@(new List<ReportTypeSelector.ReportTypeOption> 
+                        { 
+                            new ReportTypeSelector.ReportTypeOption { Value = "Summary", Label = "Summary" },
+                            new ReportTypeSelector.ReportTypeOption { Value = "Detail", Label = "Detail" }
+                        })" 
+                        GroupName="supplierLedgerReportType" />
+                </div>
+
+                <div class="row mb-3">
+                    <div class="col-12 d-flex gap-2">
+                        <ActionButton Text="Preview" IconClass="fas fa-search" OnClick="LoadSupplierPurchaseLedger" IsLoading="@isLoading" IsDisabled="@isLoading" />
+                    </div>
+                </div>
+            </FilterCard>
+
+            <!-- Loading Indicator -->
+            @if (isLoading)
+            {
+                <LoadingSpinner Message="Generating supplier purchase ledger report..." />
+            }
+
+            <!-- Error Message -->
+            <ErrorAlert Message="@errorMessage" />
+
+            <!-- Report Data -->
+            @if (supplierPurchaseLedgerData != null && supplierPurchaseLedgerData.Success)
+            {
+                <ReportTable FilterableColumns="@(new List<int> { 0, 1, 2 })">
+                    <HeaderContent>
+                        <ReportTitleHeader Title="Supplier Purchase Ledger" IconClass="fas fa-journal-whills">
+                            <DateRangeContent>
+                                From: @supplierPurchaseLedgerData.FromDate.ToString("dd/MM/yyyy") 
+                                To Date: @supplierPurchaseLedgerData.ToDate.ToString("dd/MM/yyyy")
+                                @if (!string.IsNullOrWhiteSpace(supplierPurchaseLedgerData.SupplierName))
+                                {
+                                    <span> | Supplier: @supplierPurchaseLedgerData.SupplierName</span>
+                                }
+                            </DateRangeContent>
+                        </ReportTitleHeader>
+                    </HeaderContent>
+                    
+                    <SummaryCards>
+                        <SummaryCard Title="Total Qty" Value="@CurrencyHelper.FormatNumber(supplierPurchaseLedgerData.GrandTotalQty)" BgColor="info" ColumnClass="col-md-4" />
+                        <SummaryCard Title="Total Weight" Value="@CurrencyHelper.FormatNumber(supplierPurchaseLedgerData.GrandTotalWeight)" BgColor="warning" ColumnClass="col-md-4" />
+                        <SummaryCard Title="Total Amount" Value="@CurrencyHelper.FormatNumber(supplierPurchaseLedgerData.GrandTotalAmount)" BgColor="success" ColumnClass="col-md-4" />
+                    </SummaryCards>
+
+                    <BodyContent>
+                        @if (supplierPurchaseLedgerData.ReportType == "Summary")
+                        {
+                            <!-- Summary Mode -->
+                            <div class="table-responsive">
+                                <table class="table table-bordered ledger-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Customer Name</th>
+                                            <th>Item code</th>
+                                            <th>Item Name</th>
+                                            <th>Pack Size</th>
+                                            <th class="text-end">Qty</th>
+                                            <th class="text-end">Weight</th>
+                                            <th class="text-end">Amount</th>
+                                            <th class="text-end">Average Rate</th>
+                                            <th class="text-end">Average Kgs</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @if (supplierPurchaseLedgerData.Data.Any())
+                                        {
+                                            @foreach (var group in supplierPurchaseLedgerData.Data)
+                                            {
+                                                <tr class="supplier-header-row">
+                                                    <td colspan="9"><strong>@group.SupplierName</strong></td>
+                                                </tr>
+                                                
+                                                @foreach (var item in group.SummaryItems)
+                                                {
+                                                    <tr>
+                                                        <td></td>
+                                                        <td>@item.ItemCode</td>
+                                                        <td>@item.ItemName</td>
+                                                        <td>@CurrencyHelper.FormatNumber(item.PackSize)</td>
+                                                        <td class="text-end">
+                                                            @if (item.Qty % 1 == 0)
+                                                            {
+                                                                @((int)item.Qty)
+                                                            }
+                                                            else
+                                                            {
+                                                                @CurrencyHelper.FormatNumber(item.Qty)
+                                                            }
+                                                        </td>
+                                                        <td class="text-end">@CurrencyHelper.FormatNumber(item.Weight)</td>
+                                                        <td class="text-end">@CurrencyHelper.FormatNumber(item.Amount)</td>
+                                                        <td class="text-end">@CurrencyHelper.FormatNumber(item.AverageRate)</td>
+                                                        <td class="text-end">@CurrencyHelper.FormatNumber(item.AverageKgs)</td>
+                                                    </tr>
+                                                }
+                                                
+                                                <tr class="total-row">
+                                                    <td colspan="4"><strong>Total</strong></td>
+                                                    <td class="text-end"><strong>@CurrencyHelper.FormatNumber(group.TotalQty)</strong></td>
+                                                    <td class="text-end"><strong>@CurrencyHelper.FormatNumber(group.TotalWeight)</strong></td>
+                                                    <td class="text-end"><strong>@CurrencyHelper.FormatNumber(group.TotalAmount)</strong></td>
+                                                    <td colspan="2"></td>
+                                                </tr>
+                                            }
+                                        }
+                                        else
+                                        {
+                                            <tr>
+                                                <td colspan="9" class="text-center text-muted">No purchase transactions found for the selected period and supplier.</td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        }
+                        else
+                        {
+                            <!-- Detail Mode -->
+                            <div class="table-responsive">
+                                <table class="table table-bordered ledger-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Customer Name</th>
+                                            <th>Invoice</th>
+                                            <th>Date</th>
+                                            <th>Vehicle No</th>
+                                            <th class="text-end">Qty.</th>
+                                            <th class="text-end">Total Weight</th>
+                                            <th class="text-end">Rate.</th>
+                                            <th>As per</th>
+                                            <th class="text-end">Net Amt.</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @if (supplierPurchaseLedgerData.Data.Any())
+                                        {
+                                            @foreach (var group in supplierPurchaseLedgerData.Data)
+                                            {
+                                                <tr class="supplier-header-row">
+                                                    <td colspan="9"><strong>Supplier Name: @group.SupplierName</strong></td>
+                                                </tr>
+                                                
+                                                @if (group.DetailItems.Any())
+                                                {
+                                                    var firstItem = group.DetailItems.First();
+                                                    <tr>
+                                                        <td colspan="9">
+                                                            <strong>Item Name & Description:</strong> @firstItem.ItemName 
+                                                            @if (!string.IsNullOrWhiteSpace(firstItem.ItemDescription))
+                                                            {
+                                                                <span>@firstItem.ItemDescription</span>
+                                                            }
+                                                            | <strong>Packing:</strong> @CurrencyHelper.FormatNumber(firstItem.Packing) Kgs
+                                                        </td>
+                                                    </tr>
+                                                }
+                                                
+                                                @foreach (var item in group.DetailItems)
+                                                {
+                                                    <tr>
+                                                        <td></td>
+                                                        <td>@item.InvoiceNo</td>
+                                                        <td>
+                                                            @if (item.Date.HasValue)
+                                                            {
+                                                                @item.Date.Value.ToString("dd/MM/yyyy")
+                                                            }
+                                                        </td>
+                                                        <td>@item.VehicleNo</td>
+                                                        <td class="text-end">
+                                                            @if (item.Qty % 1 == 0)
+                                                            {
+                                                                @((int)item.Qty)
+                                                            }
+                                                            else
+                                                            {
+                                                                @CurrencyHelper.FormatNumber(item.Qty)
+                                                            }
+                                                        </td>
+                                                        <td class="text-end">@CurrencyHelper.FormatNumber(item.TotalWeight)</td>
+                                                        <td class="text-end">@CurrencyHelper.FormatNumber(item.Rate)</td>
+                                                        <td>@item.AsPer</td>
+                                                        <td class="text-end">@CurrencyHelper.FormatNumber(item.NetAmt)</td>
+                                                    </tr>
+                                                }
+                                                
+                                                <tr class="total-row">
+                                                    <td colspan="4"><strong>Total</strong></td>
+                                                    <td class="text-end"><strong>@CurrencyHelper.FormatNumber(group.TotalQty)</strong></td>
+                                                    <td class="text-end"><strong>@CurrencyHelper.FormatNumber(group.TotalWeight)</strong></td>
+                                                    <td></td>
+                                                    <td></td>
+                                                    <td class="text-end"><strong>@CurrencyHelper.FormatNumber(group.TotalAmount)</strong></td>
+                                                </tr>
+                                            }
+                                        }
+                                        else
+                                        {
+                                            <tr>
+                                                <td colspan="9" class="text-center text-muted">No purchase transactions found for the selected period and supplier.</td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        }
+                    </BodyContent>
+
+                    <FooterContent>
+                        <div class="row">
+                            <div class="col-md-4">
+                                <strong>Total Qty: @CurrencyHelper.FormatNumber(supplierPurchaseLedgerData.GrandTotalQty)</strong>
+                            </div>
+                            <div class="col-md-4">
+                                <strong>Total Weight: @CurrencyHelper.FormatNumber(supplierPurchaseLedgerData.GrandTotalWeight)</strong>
+                            </div>
+                            <div class="col-md-4">
+                                <strong>Total Amount: @CurrencyHelper.FormatNumber(supplierPurchaseLedgerData.GrandTotalAmount)</strong>
+                            </div>
+                        </div>
+                    </FooterContent>
+                </ReportTable>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    private DateTime fromDate;
+    private DateTime toDate = DateTime.Now;
+    private string supplierAccount = "";
+    private bool allSuppliers = true;
+    private string reportType = "Summary";
+    private SupplierPurchaseLedgerResponse? supplierPurchaseLedgerData;
+    private bool isLoading = false;
+    private string errorMessage = string.Empty;
+    private DateTime? minDate;
+    
+    protected override async Task OnInitializedAsync()
+    {
+        // Get minimum date from session
+        minDate = await SessionService.GetMinDateAsync();
+        
+        // Set fromDate to session start_date if available, otherwise use current month start
+        if (minDate.HasValue)
+        {
+            fromDate = minDate.Value;
+        }
+        else
+        {
+            fromDate = new DateTime(DateTime.Now.Year, DateTime.Now.Month, 1);
+        }
+        
+        toDate = DateTime.Now;
+    }
+
+    private async Task OnSupplierAccountChanged(string value)
+    {
+        supplierAccount = value;
+        allSuppliers = string.IsNullOrWhiteSpace(value);
+        StateHasChanged();
+    }
+
+    private async Task LoadSupplierPurchaseLedger()
+    {
+        if (fromDate > toDate)
+        {
+            errorMessage = "From Date cannot be greater than To Date.";
+            return;
+        }
+
+        isLoading = true;
+        errorMessage = string.Empty;
+        supplierPurchaseLedgerData = null;
+
+        try
+        {
+            supplierPurchaseLedgerData = await DataService.GetSupplierPurchaseLedgerAsync(
+                fromDate, 
+                toDate, 
+                allSuppliers ? null : supplierAccount,
+                reportType,
+                allSuppliers
+            );
+            
+            if (!supplierPurchaseLedgerData.Success)
+            {
+                errorMessage = supplierPurchaseLedgerData.Message;
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"An error occurred while loading the supplier purchase ledger: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+}
+

@@ -728,6 +728,48 @@ namespace pos_app.Client.Services
             }
         }
 
+        // Purchase Register Report
+        public async Task<PurchaseRegisterResponse> GetPurchaseRegisterAsync(
+            DateTime fromDate, 
+            DateTime toDate, 
+            string invoiceType = "All")
+        {
+            try
+            {
+                var client = await CreateAuthedClientAsync();
+                var url = "api/reports/purchase-register";
+                var queryParams = new List<string>();
+                
+                queryParams.Add($"fromDate={fromDate:yyyy-MM-dd}");
+                queryParams.Add($"toDate={toDate:yyyy-MM-dd}");
+                
+                if (!string.IsNullOrEmpty(invoiceType))
+                {
+                    queryParams.Add($"invoiceType={Uri.EscapeDataString(invoiceType)}");
+                }
+                
+                if (queryParams.Any())
+                {
+                    url += "?" + string.Join("&", queryParams);
+                }
+
+                var response = await client.GetAsync(url);
+                if (response.IsSuccessStatusCode)
+                {
+                    var result = await response.Content.ReadFromJsonAsync<PurchaseRegisterResponse>();
+                    return result ?? new PurchaseRegisterResponse { Success = false, Message = "Invalid response from server" };
+                }
+
+                var errorContent = await response.Content.ReadAsStringAsync();
+                return new PurchaseRegisterResponse { Success = false, Message = $"Failed to fetch purchase register: {response.StatusCode}" };
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching purchase register");
+                return new PurchaseRegisterResponse { Success = false, Message = $"Error: {ex.Message}" };
+            }
+        }
+
         // Customer Aging Report
         public async Task<CustomerAgingResponse> GetCustomerAgingAsync(
             string? fromAccount = null,

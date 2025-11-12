@@ -4,7 +4,6 @@
 @using pos_app.Client.Components.Shared
 @inject DataService DataService
 @inject SessionService SessionService
-@inject IJSRuntime JSRuntime
 
 <PageTitle>Purchase Journal Report - POS System</PageTitle>
 
@@ -65,10 +64,6 @@
                     </div>
                     <div class="col-md-3 d-flex align-items-end gap-2">
                         <ActionButton Text="Preview" IconClass="fas fa-search" OnClick="LoadPurchaseJournal" IsLoading="@isLoading" IsDisabled="@isLoading" />
-                        @if (purchaseJournalData != null && purchaseJournalData.Success)
-                        {
-                            <ActionButton Text="Print" IconClass="fas fa-print" OnClick="PrintReport" IsDisabled="@isLoading" />
-                        }
                     </div>
                 </div>
             </FilterCard>
@@ -267,10 +262,5 @@
         }
     }
 
-    private async Task PrintReport()
-    {
-        // Trigger browser print dialog
-        await JSRuntime.InvokeVoidAsync("window.print");
-    }
 }
 

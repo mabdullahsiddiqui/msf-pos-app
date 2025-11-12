@@ -1885,6 +1885,218 @@ namespace pos_app.Controllers
             }
         }
 
+        // Purchase Register Report
+        [HttpGet("purchase-register")]
+        public async Task<ActionResult<PurchaseRegisterResponse>> GetPurchaseRegister(
+            [FromQuery] DateTime fromDate, 
+            [FromQuery] DateTime toDate,
+            [FromQuery] string invoiceType = "All")
+        {
+            var stopwatch = Stopwatch.StartNew();
+            try
+            {
+                var userId = GetCurrentUserId();
+                var user = await _authService.GetActiveUserAsync(userId);
+                
+                if (user == null)
+                {
+                    return BadRequest(new PurchaseRegisterResponse
+                    {
+                        Success = false,
+                        Message = "No active database connection found. Please set up your database connection first."
+                    });
+                }
+
+                var fromDateString = fromDate.ToString("yyyy/MM/dd");
+                var toDateString = toDate.ToString("yyyy/MM/dd");
+
+                // Build invoice type filter
+                string invoiceTypeFilter = "";
+                if (invoiceType?.Trim() != "All")
+                {
+                    invoiceTypeFilter = $"AND pi.inv_type = '{invoiceType.Trim()}'";
+                }
+
+                // Purchase Register SQL query - join pur_inv with sub_pinv to get detailed line items
+                var purchaseRegisterQuery = $@"
+                    SELECT 
+                        pi.inv_type as InvoiceType,
+                        pi.inv_no as InvoiceNo,
+                        pi.inv_date as Date,
+                        RTRIM(pi.ac_name) as Supplier,
+                        RTRIM(pi.vehicle_no) as VehicleNo,
+                        RTRIM(sp.item_name) as Item,
+                        CASE 
+                            WHEN sp.as_per = 'Mounds' OR sp.as_per = 'Kgs' THEN 
+                                CASE 
+                                    WHEN sp.packing = CAST(sp.packing AS INT) THEN CAST(CAST(sp.packing AS INT) AS VARCHAR) + ' Kgs'
+                                    ELSE CAST(sp.packing AS VARCHAR) + ' Kgs'
+                                END
+                            ELSE 
+                                CASE 
+                                    WHEN sp.packing = CAST(sp.packing AS INT) THEN CAST(CAST(sp.packing AS INT) AS VARCHAR) + ' Unit'
+                                    ELSE CAST(sp.packing AS VARCHAR) + ' Unit'
+                                END
+                        END as Packing,
+                        (sp.qty_jute + sp.qty_pp_100 + sp.qty_pp_50) as Qty,
+                        sp.total_wght as Weight,
+                        sp.rate as Rate,
+                        RTRIM(sp.as_per) as AsPer,
+                        sp.grand_tot as Amount,
+                        pi.inv_no as InvoiceNoSort
+                    FROM pur_inv pi
+                    INNER JOIN sub_pinv sp ON pi.inv_no = sp.inv_no AND pi.inv_type = sp.inv_type
+                    WHERE pi.inv_date >= '{fromDateString}' 
+                      AND pi.inv_date <= '{toDateString}'
+                      {invoiceTypeFilter}
+                    ORDER BY pi.inv_date, pi.inv_no, sp.sr_no";
+
+                var results = await _dataAccessService.ExecuteQueryAsync(user, purchaseRegisterQuery, commandTimeout: 120);
+                
+                var purchaseRegisterItems = new List<PurchaseRegisterItem>();
+                decimal totalWeight = 0;
+                decimal totalAmount = 0;
+                string currentInvoiceNo = "";
+                decimal invoiceWeight = 0;
+                decimal invoiceAmount = 0;
+
+                // Process each row
+                foreach (var row in results)
+                {
+                    var invoiceNo = row.ContainsKey("InvoiceNo") ? row["InvoiceNo"]?.ToString()?.Trim() ?? "" : "";
+                    
+                    // If this is a new invoice and we have previous invoice data, add subtotal
+                    if (!string.IsNullOrEmpty(currentInvoiceNo) && currentInvoiceNo != invoiceNo)
+                    {
+                        // Add subtotal row for previous invoice
+                        purchaseRegisterItems.Add(new PurchaseRegisterItem
+                        {
+                            InvoiceType = "",
+                            InvoiceNo = "",
+                            Date = null,
+                            Supplier = "",
+                            VehicleNo = "",
+                            Item = "",
+                            Packing = "",
+                            Qty = 0,
+                            Weight = invoiceWeight,
+                            Rate = 0,
+                            AsPer = "",
+                            Amount = invoiceAmount,
+                            IsSubTotal = true
+                        });
+                        
+                        invoiceWeight = 0;
+                        invoiceAmount = 0;
+                    }
+
+                    // Parse row data
+                    var rowInvoiceType = row.ContainsKey("InvoiceType") ? row["InvoiceType"]?.ToString()?.Trim() ?? "" : "";
+                    var date = row.ContainsKey("Date") && DateTime.TryParse(row["Date"]?.ToString(), out var d) ? d : (DateTime?)null;
+                    var supplier = row.ContainsKey("Supplier") ? row["Supplier"]?.ToString()?.Trim() ?? "" : "";
+                    var vehicleNo = row.ContainsKey("VehicleNo") ? row["VehicleNo"]?.ToString()?.Trim() ?? "" : "";
+                    var item = row.ContainsKey("Item") ? row["Item"]?.ToString()?.Trim() ?? "" : "";
+                    var packingRaw = row.ContainsKey("Packing") ? row["Packing"]?.ToString()?.Trim() ?? "" : "";
+                    // Format packing to remove .00 if it's a whole number
+                    var packing = packingRaw;
+                    if (!string.IsNullOrEmpty(packingRaw))
+                    {
+                        // Check if packing ends with " Kgs" or " Unit" and extract the number
+                        if (packingRaw.EndsWith(" Kgs") || packingRaw.EndsWith(" Unit"))
+                        {
+                            var suffix = packingRaw.EndsWith(" Kgs") ? " Kgs" : " Unit";
+                            var numberPart = packingRaw.Replace(suffix, "").Trim();
+                            if (decimal.TryParse(numberPart, out var packingValue))
+                            {
+                                if (packingValue % 1 == 0)
+                                {
+                                    packing = $"{(int)packingValue}{suffix}";
+                                }
+                                else
+                                {
+                                    packing = packingRaw; // Keep original if has decimals
+                                }
+                            }
+                        }
+                    }
+                    var qty = row.ContainsKey("Qty") && decimal.TryParse(row["Qty"]?.ToString(), out var q) ? q : 0;
+                    var weight = row.ContainsKey("Weight") && decimal.TryParse(row["Weight"]?.ToString(), out var w) ? w : 0;
+                    var rate = row.ContainsKey("Rate") && decimal.TryParse(row["Rate"]?.ToString(), out var r) ? r : 0;
+                    var asPer = row.ContainsKey("AsPer") ? row["AsPer"]?.ToString()?.Trim() ?? "" : "";
+                    var amount = row.ContainsKey("Amount") && decimal.TryParse(row["Amount"]?.ToString(), out var a) ? a : 0;
+
+                    // Add item row
+                    purchaseRegisterItems.Add(new PurchaseRegisterItem
+                    {
+                        InvoiceType = rowInvoiceType,
+                        InvoiceNo = invoiceNo,
+                        Date = date,
+                        Supplier = supplier,
+                        VehicleNo = vehicleNo,
+                        Item = item,
+                        Packing = packing,
+                        Qty = qty,
+                        Weight = weight,
+                        Rate = rate,
+                        AsPer = asPer,
+                        Amount = amount,
+                        IsSubTotal = false
+                    });
+
+                    invoiceWeight += weight;
+                    invoiceAmount += amount;
+                    totalWeight += weight;
+                    totalAmount += amount;
+                    currentInvoiceNo = invoiceNo;
+                }
+
+                // Add subtotal for last invoice if any
+                if (!string.IsNullOrEmpty(currentInvoiceNo) && invoiceWeight > 0)
+                {
+                    purchaseRegisterItems.Add(new PurchaseRegisterItem
+                    {
+                        InvoiceType = "",
+                        InvoiceNo = "",
+                        Date = null,
+                        Supplier = "",
+                        VehicleNo = "",
+                        Item = "",
+                        Packing = "",
+                        Qty = 0,
+                        Weight = invoiceWeight,
+                        Rate = 0,
+                        AsPer = "",
+                        Amount = invoiceAmount,
+                        IsSubTotal = true
+                    });
+                }
+
+                stopwatch.Stop();
+
+                return Ok(new PurchaseRegisterResponse
+                {
+                    Success = true,
+                    Message = "Purchase Register retrieved successfully",
+                    Data = purchaseRegisterItems,
+                    FromDate = fromDate,
+                    ToDate = toDate,
+                    InvoiceType = invoiceType ?? "All",
+                    TotalWeight = totalWeight,
+                    TotalAmount = totalAmount
+                });
+            }
+            catch (Exception ex)
+            {
+                stopwatch.Stop();
+                _logger.LogError(ex, "Error getting purchase register");
+                return StatusCode(500, new PurchaseRegisterResponse
+                {
+                    Success = false,
+                    Message = $"Internal server error: {ex.Message}"
+                });
+            }
+        }
+
         // Customer Aging Report
         [HttpGet("customer-aging")]
         public async Task<ActionResult<CustomerAgingResponse>> GetCustomerAging(

@@ -1,0 +1,343 @@
+@page "/reports/supplier-tax-ledger"
+@using pos_app.Client.Services
+@using pos_app.Client.Models
+@using pos_app.Client.Components.Shared
+@inject DataService DataService
+@inject SessionService SessionService
+
+<PageTitle>Supplier Tax Ledger Report - POS System</PageTitle>
+
+<style>
+    .tax-ledger-table td {
+        vertical-align: top;
+    }
+    
+    .tax-ledger-table .text-end {
+        text-align: right;
+    }
+    
+    /* Ensure header text is black */
+    .tax-ledger-table thead th {
+        color: #000 !important;
+    }
+
+    .supplier-header-row {
+        background-color: #e9ecef !important;
+        font-weight: bold;
+    }
+    
+    .total-row {
+        background-color: #f8f9fa !important;
+        font-weight: bold;
+    }
+</style>
+
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+
+            <!-- Filter Card -->
+            <FilterCard Title="Supplier Tax Ledger" IconClass="fas fa-file-invoice-dollar">
+                <div class="row mb-3">
+                    <div class="col-12 col-md-3">
+                        <label class="form-label">From A/C:</label>
+                        <AccountInput Id="fromAccount" @bind-Value="fromAccount" Placeholder="1-00-00-0000" Class="form-control" />
+                    </div>
+                    <div class="col-12 col-md-3">
+                        <label class="form-label">Upto A/C:</label>
+                        <AccountInput Id="uptoAccount" @bind-Value="uptoAccount" Placeholder="1-99-99-9999" Class="form-control" />
+                    </div>
+                    <DateInput Label="From Date:" Id="fromDate" @bind-Value="fromDate" MinDate="@minDate" ColumnClass="col-12 col-md-2" />
+                    <DateInput Label="To Date:" Id="toDate" @bind-Value="toDate" ColumnClass="col-12 col-md-2" />
+                </div>
+
+                <div class="row mb-3">
+                    <div class="col-md-12">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="taxCalculateAsPerBag" @bind="taxCalculateAsPerBag" />
+                            <label class="form-check-label" for="taxCalculateAsPerBag">
+                                Tax Calculate As Per Bag
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="row mb-3">
+                    <div class="col-md-3">
+                        <label class="form-label">Tax Rate Per Bag:</label>
+                        <input type="number" 
+                               class="form-control" 
+                               @bind="taxRatePerBag" 
+                               @bind:event="oninput"
+                               step="0.01" 
+                               min="0"
+                               disabled="@(!taxCalculateAsPerBag)" />
+                    </div>
+                </div>
+
+                <div class="row mb-3">
+                    <ReportTypeSelector SelectedValue="@reportType" SelectedValueChanged="@((string value) => reportType = value)" 
+                        Options="@(new List<ReportTypeSelector.ReportTypeOption> 
+                        { 
+                            new ReportTypeSelector.ReportTypeOption { Value = "Detail", Label = "Detail" },
+                            new ReportTypeSelector.ReportTypeOption { Value = "Summary", Label = "Summary" }
+                        })" 
+                        GroupName="supplierTaxLedgerReportType" />
+                </div>
+
+                <div class="row mb-3">
+                    <div class="col-12 d-flex gap-2">
+                        <ActionButton Text="Preview" IconClass="fas fa-search" OnClick="LoadSupplierTaxLedger" IsLoading="@isLoading" IsDisabled="@isLoading" />
+                        @if (supplierTaxLedgerData != null && supplierTaxLedgerData.Success)
+                        {
+                            <ExportButton OnClick="ExportToExcel" IsDisabled="@isLoading" />
+                        }
+                    </div>
+                </div>
+            </FilterCard>
+
+            <!-- Loading Indicator -->
+            @if (isLoading)
+            {
+                <LoadingSpinner Message="Generating supplier tax ledger report..." />
+            }
+
+            <!-- Error Message -->
+            <ErrorAlert Message="@errorMessage" />
+
+            <!-- Report Data -->
+            @if (supplierTaxLedgerData != null && supplierTaxLedgerData.Success)
+            {
+                <ReportTable FilterableColumns="@(new List<int> { 0, 1, 2 })">
+                    <HeaderContent>
+                        <ReportTitleHeader Title="Supplier Tax Ledger" IconClass="fas fa-file-invoice-dollar">
+                            <DateRangeContent>
+                                From: @supplierTaxLedgerData.FromDate.ToString("dd/MM/yyyy") 
+                                To Date: @supplierTaxLedgerData.ToDate.ToString("dd/MM/yyyy")
+                                | From A/C: @supplierTaxLedgerData.FromAccount To: @supplierTaxLedgerData.UptoAccount
+                                @if (supplierTaxLedgerData.TaxCalculateAsPerBag)
+                                {
+                                    <span> | Tax Per Bag: @CurrencyHelper.FormatNumber(supplierTaxLedgerData.TaxRatePerBag)</span>
+                                }
+                            </DateRangeContent>
+                        </ReportTitleHeader>
+                    </HeaderContent>
+                    
+                    <SummaryCards>
+                        <SummaryCard Title="Grand Total Tax" Value="@CurrencyHelper.FormatNumber(supplierTaxLedgerData.GrandTotal)" BgColor="success" ColumnClass="col-md-12" />
+                    </SummaryCards>
+
+                    <BodyContent>
+                        @if (supplierTaxLedgerData.ReportType == "Summary")
+                        {
+                            <!-- Summary Mode -->
+                            <div class="table-responsive">
+                                <table class="table table-bordered tax-ledger-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Supplier Name</th>
+                                            <th>N.T.N</th>
+                                            <th class="text-end">Amount</th>
+                                            <th class="text-end">Weight</th>
+                                            <th class="text-end">Commission</th>
+                                            <th class="text-end">Income Tax</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @if (supplierTaxLedgerData.Data.Any())
+                                        {
+                                            @foreach (var group in supplierTaxLedgerData.Data)
+                                            {
+                                                @if (group.SummaryItem != null)
+                                                {
+                                                    <tr>
+                                                        <td>@group.SupplierName</td>
+                                                        <td>@group.NTN</td>
+                                                        <td class="text-end">@CurrencyHelper.FormatNumber(group.SummaryItem.Amount)</td>
+                                                        <td class="text-end">@CurrencyHelper.FormatNumber(group.SummaryItem.Weight)</td>
+                                                        <td class="text-end">@CurrencyHelper.FormatNumber(group.SummaryItem.Commission)</td>
+                                                        <td class="text-end">@CurrencyHelper.FormatNumber(group.SummaryItem.IncomeTax)</td>
+                                                    </tr>
+                                                }
+                                            }
+                                        }
+                                        else
+                                        {
+                                            <tr>
+                                                <td colspan="6" class="text-center text-muted">No tax data found for the selected period and account range.</td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        }
+                        else
+                        {
+                            <!-- Detail Mode -->
+                            <div class="table-responsive">
+                                <table class="table table-bordered tax-ledger-table">
+                                    <thead>
+                                        <tr>
+                                            <th>A/C Code</th>
+                                            <th>Name</th>
+                                            <th>NTN</th>
+                                            <th>Inv. No.</th>
+                                            <th>Date</th>
+                                            <th class="text-end">Inv. Amount</th>
+                                            <th class="text-end">Commission</th>
+                                            <th class="text-end">Tax-1 Rate %</th>
+                                            <th class="text-end">Tax-1 Amount</th>
+                                            <th class="text-end">Tax-2 Rate %</th>
+                                            <th class="text-end">Tax-2 Amount</th>
+                                            <th class="text-end">Total</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @if (supplierTaxLedgerData.Data.Any())
+                                        {
+                                            @foreach (var group in supplierTaxLedgerData.Data)
+                                            {
+                                                <tr class="supplier-header-row">
+                                                    <td colspan="12"><strong>A/C Code.@group.SupplierAccount, Name: @group.SupplierName NTN: @group.NTN</strong></td>
+                                                </tr>
+                                                
+                                                @foreach (var item in group.DetailItems)
+                                                {
+                                                    <tr>
+                                                        <td></td>
+                                                        <td></td>
+                                                        <td></td>
+                                                        <td>@item.InvoiceNo</td>
+                                                        <td>
+                                                            @if (item.Date.HasValue)
+                                                            {
+                                                                @item.Date.Value.ToString("dd/MM/yyyy")
+                                                            }
+                                                        </td>
+                                                        <td class="text-end">@CurrencyHelper.FormatNumber(item.InvAmount)</td>
+                                                        <td class="text-end">@CurrencyHelper.FormatNumber(item.Commission)</td>
+                                                        <td class="text-end">@CurrencyHelper.FormatNumber(item.Tax1Rate)</td>
+                                                        <td class="text-end">@CurrencyHelper.FormatNumber(item.Tax1Amount)</td>
+                                                        <td class="text-end">@CurrencyHelper.FormatNumber(item.Tax2Rate)</td>
+                                                        <td class="text-end">@CurrencyHelper.FormatNumber(item.Tax2Amount)</td>
+                                                        <td class="text-end">@CurrencyHelper.FormatNumber(item.Total)</td>
+                                                    </tr>
+                                                }
+                                                
+                                                <tr class="total-row">
+                                                    <td colspan="11"><strong>Sub. Total.</strong></td>
+                                                    <td class="text-end"><strong>@CurrencyHelper.FormatNumber(group.SubTotal)</strong></td>
+                                                </tr>
+                                            }
+                                        }
+                                        else
+                                        {
+                                            <tr>
+                                                <td colspan="12" class="text-center text-muted">No tax data found for the selected period and account range.</td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                    @if (supplierTaxLedgerData.Data.Any())
+                                    {
+                                        <tfoot>
+                                            <tr class="total-row">
+                                                <td colspan="11"><strong>Grand Total</strong></td>
+                                                <td class="text-end"><strong>@CurrencyHelper.FormatNumber(supplierTaxLedgerData.GrandTotal)</strong></td>
+                                            </tr>
+                                        </tfoot>
+                                    }
+                                </table>
+                            </div>
+                        }
+                    </BodyContent>
+
+                    <FooterContent>
+                        <div class="row">
+                            <div class="col-md-12">
+                                <strong>Grand Total: @CurrencyHelper.FormatNumber(supplierTaxLedgerData.GrandTotal)</strong>
+                            </div>
+                        </div>
+                    </FooterContent>
+                </ReportTable>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    private DateTime fromDate;
+    private DateTime toDate = DateTime.Now;
+    private string fromAccount = "1-00-00-0000";
+    private string uptoAccount = "1-99-99-9999";
+    private bool taxCalculateAsPerBag = false;
+    private decimal taxRatePerBag = 0;
+    private string reportType = "Detail";
+    private SupplierTaxLedgerResponse? supplierTaxLedgerData;
+    private bool isLoading = false;
+    private string errorMessage = string.Empty;
+    private DateTime? minDate;
+    
+    protected override async Task OnInitializedAsync()
+    {
+        // Get minimum date from session
+        minDate = await SessionService.GetMinDateAsync();
+        
+        // Set fromDate to session start_date if available, otherwise use current month start
+        if (minDate.HasValue)
+        {
+            fromDate = minDate.Value;
+        }
+        else
+        {
+            fromDate = new DateTime(DateTime.Now.Year, DateTime.Now.Month, 1);
+        }
+        
+        toDate = DateTime.Now;
+    }
+
+    private async Task LoadSupplierTaxLedger()
+    {
+        if (fromDate > toDate)
+        {
+            errorMessage = "From Date cannot be greater than To Date.";
+            return;
+        }
+
+        isLoading = true;
+        errorMessage = string.Empty;
+        supplierTaxLedgerData = null;
+
+        try
+        {
+            supplierTaxLedgerData = await DataService.GetSupplierTaxLedgerAsync(
+                fromDate, 
+                toDate, 
+                fromAccount,
+                uptoAccount,
+                taxCalculateAsPerBag,
+                taxRatePerBag,
+                reportType
+            );
+            
+            if (!supplierTaxLedgerData.Success)
+            {
+                errorMessage = supplierTaxLedgerData.Message;
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"An error occurred while loading the supplier tax ledger: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task ExportToExcel()
+    {
+        // TODO: Implement Excel export functionality
+        await Task.CompletedTask;
+    }
+}
+

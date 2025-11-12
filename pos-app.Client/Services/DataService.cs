@@ -874,6 +874,52 @@ namespace pos_app.Client.Services
             }
         }
 
+        // Supplier Tax Ledger Report
+        public async Task<SupplierTaxLedgerResponse> GetSupplierTaxLedgerAsync(
+            DateTime fromDate, 
+            DateTime toDate, 
+            string fromAccount, 
+            string uptoAccount,
+            bool taxCalculateAsPerBag,
+            decimal taxRatePerBag,
+            string reportType)
+        {
+            try
+            {
+                var client = await CreateAuthedClientAsync();
+                var url = "api/reports/supplier-tax-ledger";
+                var queryParams = new List<string>();
+                
+                queryParams.Add($"fromDate={fromDate:yyyy-MM-dd}");
+                queryParams.Add($"toDate={toDate:yyyy-MM-dd}");
+                queryParams.Add($"fromAccount={Uri.EscapeDataString(fromAccount)}");
+                queryParams.Add($"uptoAccount={Uri.EscapeDataString(uptoAccount)}");
+                queryParams.Add($"taxCalculateAsPerBag={taxCalculateAsPerBag}");
+                queryParams.Add($"taxRatePerBag={taxRatePerBag}");
+                queryParams.Add($"reportType={Uri.EscapeDataString(reportType)}");
+                
+                if (queryParams.Any())
+                {
+                    url += "?" + string.Join("&", queryParams);
+                }
+
+                var response = await client.GetAsync(url);
+                if (response.IsSuccessStatusCode)
+                {
+                    var result = await response.Content.ReadFromJsonAsync<SupplierTaxLedgerResponse>();
+                    return result ?? new SupplierTaxLedgerResponse { Success = false, Message = "Invalid response from server" };
+                }
+
+                var errorContent = await response.Content.ReadAsStringAsync();
+                return new SupplierTaxLedgerResponse { Success = false, Message = $"Failed to fetch supplier tax ledger: {response.StatusCode}" };
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching supplier tax ledger");
+                return new SupplierTaxLedgerResponse { Success = false, Message = $"Error: {ex.Message}" };
+            }
+        }
+
         // Item Purchase Register Report
         public async Task<ItemPurchaseRegisterResponse> GetItemPurchaseRegisterAsync(
             DateTime fromDate, 

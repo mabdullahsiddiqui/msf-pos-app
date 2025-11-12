@@ -2694,6 +2694,266 @@ namespace pos_app.Controllers
             }
         }
 
+        // Supplier Tax Ledger Report
+        [HttpGet("supplier-tax-ledger")]
+        public async Task<ActionResult<SupplierTaxLedgerResponse>> GetSupplierTaxLedger(
+            [FromQuery] DateTime fromDate, 
+            [FromQuery] DateTime toDate,
+            [FromQuery] string? fromAccount = null,
+            [FromQuery] string? uptoAccount = null,
+            [FromQuery] bool taxCalculateAsPerBag = false,
+            [FromQuery] decimal taxRatePerBag = 0,
+            [FromQuery] string reportType = "Detail")
+        {
+            var stopwatch = Stopwatch.StartNew();
+            try
+            {
+                var userId = GetCurrentUserId();
+                var user = await _authService.GetActiveUserAsync(userId);
+                
+                if (user == null)
+                {
+                    return BadRequest(new SupplierTaxLedgerResponse
+                    {
+                        Success = false,
+                        Message = "No active database connection found. Please set up your database connection first."
+                    });
+                }
+
+                // Set defaults
+                var fromAcc = fromAccount ?? "1-00-00-0000";
+                var uptoAcc = uptoAccount ?? "1-99-99-9999";
+
+                var fromDateString = fromDate.ToString("yyyy/MM/dd");
+                var toDateString = toDate.ToString("yyyy/MM/dd");
+
+                // Convert account codes to numeric for range filtering
+                var fromAccountNumeric = long.Parse(fromAcc.Replace("-", ""));
+                var uptoAccountNumeric = long.Parse(uptoAcc.Replace("-", ""));
+
+                string baseQuery;
+                
+                if (reportType == "Detail")
+                {
+                    // Detail mode: Show invoice-level details
+                    if (taxCalculateAsPerBag)
+                    {
+                        // Per-bag calculation: Join with sub_pinv to get bag counts
+                        baseQuery = $@"
+                            SELECT 
+                                pi.ac_code as SupplierAccount,
+                                RTRIM(pi.ac_name) as SupplierName,
+                                RTRIM(pi.ntn_no) as NTN,
+                                pi.inv_no as InvoiceNo,
+                                pi.inv_date as Date,
+                                pi.grand_tot as InvAmount,
+                                pi.commission as Commission,
+                                {taxRatePerBag} as Tax1Rate,
+                                (bag_counts.TotalBags * {taxRatePerBag}) as Tax1Amount,
+                                pi.ot_taxrate as Tax2Rate,
+                                pi.ot_taxamt as Tax2Amount,
+                                (bag_counts.TotalBags * {taxRatePerBag} + pi.ot_taxamt) as Total
+                            FROM pur_inv pi
+                            INNER JOIN (
+                                SELECT 
+                                    inv_no,
+                                    inv_type,
+                                    SUM(qty_jute + qty_pp_100 + qty_pp_50) as TotalBags
+                                FROM sub_pinv
+                                GROUP BY inv_no, inv_type
+                            ) bag_counts ON pi.inv_no = bag_counts.inv_no AND pi.inv_type = bag_counts.inv_type
+                            WHERE pi.inv_date >= '{fromDateString}' 
+                              AND pi.inv_date <= '{toDateString}'
+                              AND CAST(REPLACE(pi.ac_code, '-', '') AS BIGINT) >= {fromAccountNumeric}
+                              AND CAST(REPLACE(pi.ac_code, '-', '') AS BIGINT) <= {uptoAccountNumeric}
+                            ORDER BY pi.ac_code, pi.ac_name, pi.inv_date, pi.inv_no";
+                    }
+                    else
+                    {
+                        // Normal calculation: Use tax_amount from pur_inv
+                        baseQuery = $@"
+                            SELECT 
+                                pi.ac_code as SupplierAccount,
+                                RTRIM(pi.ac_name) as SupplierName,
+                                RTRIM(pi.ntn_no) as NTN,
+                                pi.inv_no as InvoiceNo,
+                                pi.inv_date as Date,
+                                pi.grand_tot as InvAmount,
+                                pi.commission as Commission,
+                                pi.tax_rate as Tax1Rate,
+                                pi.tax_amount as Tax1Amount,
+                                pi.ot_taxrate as Tax2Rate,
+                                pi.ot_taxamt as Tax2Amount,
+                                (pi.tax_amount + pi.ot_taxamt) as Total
+                            FROM pur_inv pi
+                            WHERE pi.inv_date >= '{fromDateString}' 
+                              AND pi.inv_date <= '{toDateString}'
+                              AND CAST(REPLACE(pi.ac_code, '-', '') AS BIGINT) >= {fromAccountNumeric}
+                              AND CAST(REPLACE(pi.ac_code, '-', '') AS BIGINT) <= {uptoAccountNumeric}
+                            ORDER BY pi.ac_code, pi.ac_name, pi.inv_date, pi.inv_no";
+                    }
+                }
+                else
+                {
+                    // Summary mode: Aggregate by supplier
+                    if (taxCalculateAsPerBag)
+                    {
+                        // Per-bag calculation
+                        baseQuery = $@"
+                            SELECT 
+                                pi.ac_code as SupplierAccount,
+                                RTRIM(pi.ac_name) as SupplierName,
+                                RTRIM(pi.ntn_no) as NTN,
+                                SUM(pi.grand_tot) as Amount,
+                                SUM(bag_counts.TotalWeight) as Weight,
+                                SUM(pi.commission) as Commission,
+                                SUM(bag_counts.TotalBags * {taxRatePerBag}) as IncomeTax
+                            FROM pur_inv pi
+                            INNER JOIN (
+                                SELECT 
+                                    inv_no,
+                                    inv_type,
+                                    SUM(qty_jute + qty_pp_100 + qty_pp_50) as TotalBags,
+                                    SUM(total_wght) as TotalWeight
+                                FROM sub_pinv
+                                GROUP BY inv_no, inv_type
+                            ) bag_counts ON pi.inv_no = bag_counts.inv_no AND pi.inv_type = bag_counts.inv_type
+                            WHERE pi.inv_date >= '{fromDateString}' 
+                              AND pi.inv_date <= '{toDateString}'
+                              AND CAST(REPLACE(pi.ac_code, '-', '') AS BIGINT) >= {fromAccountNumeric}
+                              AND CAST(REPLACE(pi.ac_code, '-', '') AS BIGINT) <= {uptoAccountNumeric}
+                            GROUP BY pi.ac_code, pi.ac_name, pi.ntn_no
+                            ORDER BY pi.ac_code, pi.ac_name";
+                    }
+                    else
+                    {
+                        // Normal calculation
+                        baseQuery = $@"
+                            SELECT 
+                                pi.ac_code as SupplierAccount,
+                                RTRIM(pi.ac_name) as SupplierName,
+                                RTRIM(pi.ntn_no) as NTN,
+                                SUM(pi.grand_tot) as Amount,
+                                SUM(sp.total_wght) as Weight,
+                                SUM(pi.commission) as Commission,
+                                SUM(pi.tax_amount + pi.ot_taxamt) as IncomeTax
+                            FROM pur_inv pi
+                            LEFT JOIN sub_pinv sp ON pi.inv_no = sp.inv_no AND pi.inv_type = sp.inv_type
+                            WHERE pi.inv_date >= '{fromDateString}' 
+                              AND pi.inv_date <= '{toDateString}'
+                              AND CAST(REPLACE(pi.ac_code, '-', '') AS BIGINT) >= {fromAccountNumeric}
+                              AND CAST(REPLACE(pi.ac_code, '-', '') AS BIGINT) <= {uptoAccountNumeric}
+                            GROUP BY pi.ac_code, pi.ac_name, pi.ntn_no
+                            ORDER BY pi.ac_code, pi.ac_name";
+                    }
+                }
+
+                var results = await _dataAccessService.ExecuteQueryAsync(user, baseQuery, commandTimeout: 120);
+                
+                var groups = new Dictionary<string, SupplierTaxLedgerGroup>();
+                decimal grandTotal = 0;
+
+                foreach (var row in results)
+                {
+                    var supplierAcc = row.ContainsKey("SupplierAccount") ? row["SupplierAccount"]?.ToString()?.Trim() ?? "" : "";
+                    var supplierNm = row.ContainsKey("SupplierName") ? row["SupplierName"]?.ToString()?.Trim() ?? "";
+                    var ntn = row.ContainsKey("NTN") ? row["NTN"]?.ToString()?.Trim() ?? "";
+                    
+                    if (string.IsNullOrEmpty(supplierAcc))
+                        continue;
+
+                    // Get or create group
+                    if (!groups.ContainsKey(supplierAcc))
+                    {
+                        groups[supplierAcc] = new SupplierTaxLedgerGroup
+                        {
+                            SupplierAccount = supplierAcc,
+                            SupplierName = supplierNm,
+                            NTN = ntn
+                        };
+                    }
+
+                    var group = groups[supplierAcc];
+
+                    if (reportType == "Detail")
+                    {
+                        var invoiceNo = row.ContainsKey("InvoiceNo") ? row["InvoiceNo"]?.ToString()?.Trim() ?? "" : "";
+                        var date = row.ContainsKey("Date") && DateTime.TryParse(row["Date"]?.ToString(), out var d) ? d : (DateTime?)null;
+                        var invAmount = row.ContainsKey("InvAmount") && decimal.TryParse(row["InvAmount"]?.ToString(), out var ia) ? ia : 0;
+                        var commission = row.ContainsKey("Commission") && decimal.TryParse(row["Commission"]?.ToString(), out var c) ? c : 0;
+                        var tax1Rate = row.ContainsKey("Tax1Rate") && decimal.TryParse(row["Tax1Rate"]?.ToString(), out var t1r) ? t1r : 0;
+                        var tax1Amount = row.ContainsKey("Tax1Amount") && decimal.TryParse(row["Tax1Amount"]?.ToString(), out var t1a) ? t1a : 0;
+                        var tax2Rate = row.ContainsKey("Tax2Rate") && decimal.TryParse(row["Tax2Rate"]?.ToString(), out var t2r) ? t2r : 0;
+                        var tax2Amount = row.ContainsKey("Tax2Amount") && decimal.TryParse(row["Tax2Amount"]?.ToString(), out var t2a) ? t2a : 0;
+                        var total = row.ContainsKey("Total") && decimal.TryParse(row["Total"]?.ToString(), out var t) ? t : 0;
+
+                        group.DetailItems.Add(new SupplierTaxLedgerDetailItem
+                        {
+                            InvoiceNo = invoiceNo,
+                            Date = date,
+                            InvAmount = invAmount,
+                            Commission = commission,
+                            Tax1Rate = tax1Rate,
+                            Tax1Amount = tax1Amount,
+                            Tax2Rate = tax2Rate,
+                            Tax2Amount = tax2Amount,
+                            Total = total
+                        });
+
+                        group.SubTotal += total;
+                        grandTotal += total;
+                    }
+                    else
+                    {
+                        var amount = row.ContainsKey("Amount") && decimal.TryParse(row["Amount"]?.ToString(), out var a) ? a : 0;
+                        var weight = row.ContainsKey("Weight") && decimal.TryParse(row["Weight"]?.ToString(), out var w) ? w : 0;
+                        var commission = row.ContainsKey("Commission") && decimal.TryParse(row["Commission"]?.ToString(), out var c) ? c : 0;
+                        var incomeTax = row.ContainsKey("IncomeTax") && decimal.TryParse(row["IncomeTax"]?.ToString(), out var it) ? it : 0;
+
+                        group.SummaryItem = new SupplierTaxLedgerSummaryItem
+                        {
+                            SupplierName = supplierNm,
+                            NTN = ntn,
+                            Amount = amount,
+                            Weight = weight,
+                            Commission = commission,
+                            IncomeTax = incomeTax
+                        };
+
+                        group.SubTotal = incomeTax;
+                        grandTotal += incomeTax;
+                    }
+                }
+
+                stopwatch.Stop();
+
+                return Ok(new SupplierTaxLedgerResponse
+                {
+                    Success = true,
+                    Message = "Supplier Tax Ledger retrieved successfully",
+                    Data = groups.Values.ToList(),
+                    FromDate = fromDate,
+                    ToDate = toDate,
+                    FromAccount = fromAcc,
+                    UptoAccount = uptoAcc,
+                    TaxCalculateAsPerBag = taxCalculateAsPerBag,
+                    TaxRatePerBag = taxRatePerBag,
+                    ReportType = reportType,
+                    GrandTotal = grandTotal
+                });
+            }
+            catch (Exception ex)
+            {
+                stopwatch.Stop();
+                _logger.LogError(ex, "Error getting supplier tax ledger");
+                return StatusCode(500, new SupplierTaxLedgerResponse
+                {
+                    Success = false,
+                    Message = $"Internal server error: {ex.Message}"
+                });
+            }
+        }
+
         // Customer Aging Report
         [HttpGet("customer-aging")]
         public async Task<ActionResult<CustomerAgingResponse>> GetCustomerAging(

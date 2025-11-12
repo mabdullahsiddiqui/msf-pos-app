@@ -912,6 +912,64 @@ namespace pos_app.Client.Services
             }
         }
 
+        // Item Sales Ledger Report
+        public async Task<ItemSalesLedgerResponse> GetItemSalesLedgerAsync(
+            DateTime fromDate, 
+            DateTime toDate, 
+            string itemCode,
+            string itemName,
+            string? variety = null,
+            decimal? packSize = null,
+            string? status = null)
+        {
+            try
+            {
+                var client = await CreateAuthedClientAsync();
+                var url = "api/reports/item-sales-ledger";
+                var queryParams = new List<string>();
+                
+                queryParams.Add($"fromDate={fromDate:yyyy-MM-dd}");
+                queryParams.Add($"toDate={toDate:yyyy-MM-dd}");
+                queryParams.Add($"itemCode={Uri.EscapeDataString(itemCode)}");
+                queryParams.Add($"itemName={Uri.EscapeDataString(itemName)}");
+                
+                if (!string.IsNullOrEmpty(variety))
+                {
+                    queryParams.Add($"variety={Uri.EscapeDataString(variety)}");
+                }
+                
+                if (packSize.HasValue)
+                {
+                    queryParams.Add($"packSize={packSize.Value}");
+                }
+                
+                if (!string.IsNullOrEmpty(status))
+                {
+                    queryParams.Add($"status={Uri.EscapeDataString(status)}");
+                }
+                
+                if (queryParams.Any())
+                {
+                    url += "?" + string.Join("&", queryParams);
+                }
+
+                var response = await client.GetAsync(url);
+                if (response.IsSuccessStatusCode)
+                {
+                    var result = await response.Content.ReadFromJsonAsync<ItemSalesLedgerResponse>();
+                    return result ?? new ItemSalesLedgerResponse { Success = false, Message = "Invalid response from server" };
+                }
+
+                var errorContent = await response.Content.ReadAsStringAsync();
+                return new ItemSalesLedgerResponse { Success = false, Message = $"Failed to fetch item sales ledger: {response.StatusCode}" };
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching item sales ledger");
+                return new ItemSalesLedgerResponse { Success = false, Message = $"Error: {ex.Message}" };
+            }
+        }
+
         // Supplier Purchase Ledger Report
         public async Task<SupplierPurchaseLedgerResponse> GetSupplierPurchaseLedgerAsync(
             DateTime fromDate, 

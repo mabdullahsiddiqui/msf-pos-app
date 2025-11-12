@@ -1,0 +1,339 @@
+@page "/reports/item-sales-ledger"
+@using pos_app.Client.Services
+@using pos_app.Client.Models
+@using pos_app.Client.Components.Shared
+@inject DataService DataService
+@inject SessionService SessionService
+
+<PageTitle>Item Sales Ledger Report - POS System</PageTitle>
+
+<style>
+    .ledger-table td {
+        vertical-align: top;
+    }
+    
+    .ledger-table .text-end {
+        text-align: right;
+    }
+    
+    /* Ensure header text is black */
+    .ledger-table thead th {
+        color: #000 !important;
+    }
+
+    .item-details-row {
+        background-color: #f8f9fa;
+        padding: 10px;
+        border-radius: 5px;
+        margin-bottom: 15px;
+    }
+
+    .item-detail-label {
+        font-weight: 600;
+        color: #495057;
+    }
+
+    .item-detail-value {
+        color: #212529;
+    }
+
+    .subtotal-row {
+        background-color: #e7d2ff !important;
+        font-weight: 600;
+    }
+
+    .grandtotal-row {
+        background-color: #d4a5ff !important;
+        font-weight: 700;
+    }
+
+    .average-rates {
+        background-color: #f8f9fa;
+        padding: 15px;
+        border-radius: 5px;
+        margin-top: 15px;
+    }
+
+    .average-rate-item {
+        margin-bottom: 8px;
+    }
+</style>
+
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+
+            <!-- Item Selection and Date Filter -->
+            <FilterCard Title="Item Sales Ledger (Date to Date)" IconClass="fas fa-clipboard-list">
+                <div class="row mb-3">
+                    <SearchableItemInput Label="Item:" Id="itemInput" @bind-Value="selectedItem" ColumnClass="col-12 col-md-6" />
+                    <DateInput Label="From Date:" Id="fromDate" @bind-Value="fromDate" MinDate="@minDate" ColumnClass="col-12 col-md-3" />
+                    <DateInput Label="Upto Date:" Id="toDate" @bind-Value="toDate" ColumnClass="col-12 col-md-3" />
+                </div>
+
+                <!-- Display Selected Item Details -->
+                @if (selectedItem != null)
+                {
+                    <div class="item-details-row">
+                        <div class="row">
+                            <div class="col-md-2">
+                                <span class="item-detail-label">Item Code:</span>
+                                <span class="item-detail-value">@selectedItem.ItemCode.Trim()</span>
+                            </div>
+                            <div class="col-md-3">
+                                <span class="item-detail-label">Item Name:</span>
+                                <span class="item-detail-value">@selectedItem.ItemName.Trim()</span>
+                            </div>
+                            <div class="col-md-2">
+                                <span class="item-detail-label">Variety:</span>
+                                <span class="item-detail-value">@(string.IsNullOrWhiteSpace(selectedItem.Variety) ? "N/A" : selectedItem.Variety.Trim())</span>
+                            </div>
+                            <div class="col-md-2">
+                                <span class="item-detail-label">Pack Size:</span>
+                                <span class="item-detail-value">@(selectedItem.PackSize > 0 ? selectedItem.PackSize.ToString("N2") : "N/A")</span>
+                            </div>
+                            <div class="col-md-2">
+                                <span class="item-detail-label">Status:</span>
+                                <span class="item-detail-value">@(string.IsNullOrWhiteSpace(selectedItem.PackStat) ? "N/A" : selectedItem.PackStat.Trim())</span>
+                            </div>
+                        </div>
+                    </div>
+                }
+
+                <div class="row mb-3">
+                    <div class="col-12 d-flex gap-2">
+                        <ActionButton Text="Preview" IconClass="fas fa-search" OnClick="LoadItemSalesLedger" IsLoading="@isLoading" IsDisabled="@isPreviewDisabled" />
+                    </div>
+                </div>
+            </FilterCard>
+
+            <!-- Loading Indicator -->
+            @if (isLoading)
+            {
+                <LoadingSpinner Message="Generating item sales ledger report..." />
+            }
+
+            <!-- Error Message -->
+            <ErrorAlert Message="@errorMessage" />
+
+            <!-- Report Data -->
+            @if (itemSalesLedgerData != null && itemSalesLedgerData.Success)
+            {
+                <ReportTable FilterableColumns="@(new List<int> { 0, 1 })">
+                    <HeaderContent>
+                        <ReportTitleHeader Title="Item Sales Ledger" IconClass="fas fa-clipboard-list">
+                            <DateRangeContent>
+                                From: @itemSalesLedgerData.FromDate.ToString("dd/MM/yyyy") 
+                                To Date: @itemSalesLedgerData.ToDate.ToString("dd/MM/yyyy")
+                            </DateRangeContent>
+                        </ReportTitleHeader>
+                    </HeaderContent>
+                    
+                    <SummaryCards>
+                        <SummaryCard Title="Total Qty" Value="@CurrencyHelper.FormatNumber(itemSalesLedgerData.TotalQty)" BgColor="info" ColumnClass="col-md-3" />
+                        <SummaryCard Title="Total Weight" Value="@CurrencyHelper.FormatNumber(itemSalesLedgerData.TotalWeight)" BgColor="warning" ColumnClass="col-md-3" />
+                        <SummaryCard Title="Total Gross Amount" Value="@CurrencyHelper.FormatNumber(itemSalesLedgerData.TotalGrossAmount)" BgColor="primary" ColumnClass="col-md-3" />
+                        <SummaryCard Title="Total Net Amount" Value="@CurrencyHelper.FormatNumber(itemSalesLedgerData.TotalNetAmount)" BgColor="success" ColumnClass="col-md-3" />
+                    </SummaryCards>
+
+                    <BodyContent>
+                        <div class="table-responsive">
+                            <table class="table table-bordered ledger-table">
+                                <thead>
+                                    <tr>
+                                        <th>Invoice</th>
+                                        <th>Date</th>
+                                        <th class="text-end">Qty.</th>
+                                        <th class="text-end">Total Weight</th>
+                                        <th class="text-end">Rate.</th>
+                                        <th>Asper</th>
+                                        <th class="text-end">Gross Amount</th>
+                                        <th class="text-end">Disc.</th>
+                                        <th class="text-end">Net Amt.</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @if (itemSalesLedgerData.Data.Any())
+                                    {
+                                        @foreach (var item in itemSalesLedgerData.Data)
+                                        {
+                                            <tr class="@(item.IsSubTotal ? "subtotal-row" : "")">
+                                                <td>@(item.IsSubTotal ? "Sub. Total" : item.InvoiceNo)</td>
+                                                <td>
+                                                    @if (item.Date.HasValue && !item.IsSubTotal)
+                                                    {
+                                                        @item.Date.Value.ToString("dd/MM/yyyy")
+                                                    }
+                                                </td>
+                                                <td class="text-end">
+                                                    @if (item.Qty > 0)
+                                                    {
+                                                        @if (item.Qty % 1 == 0)
+                                                        {
+                                                            @((int)item.Qty)
+                                                        }
+                                                        else
+                                                        {
+                                                            @CurrencyHelper.FormatNumber(item.Qty)
+                                                        }
+                                                    }
+                                                </td>
+                                                <td class="text-end">
+                                                    @if (item.TotalWeight > 0)
+                                                    {
+                                                        @CurrencyHelper.FormatNumber(item.TotalWeight)
+                                                    }
+                                                </td>
+                                                <td class="text-end">
+                                                    @if (!item.IsSubTotal && item.Rate > 0)
+                                                    {
+                                                        @CurrencyHelper.FormatNumber(item.Rate)
+                                                    }
+                                                </td>
+                                                <td>@(item.IsSubTotal ? "" : item.AsPer)</td>
+                                                <td class="text-end">
+                                                    @if (!item.IsSubTotal && item.GrossAmount > 0)
+                                                    {
+                                                        @CurrencyHelper.FormatNumber(item.GrossAmount)
+                                                    }
+                                                </td>
+                                                <td class="text-end">
+                                                    @if (!item.IsSubTotal && item.Discount > 0)
+                                                    {
+                                                        @CurrencyHelper.FormatNumber(item.Discount)
+                                                    }
+                                                </td>
+                                                <td class="text-end">
+                                                    @if (item.NetAmount > 0)
+                                                    {
+                                                        @CurrencyHelper.FormatNumber(item.NetAmount)
+                                                    }
+                                                </td>
+                                            </tr>
+                                        }
+                                    }
+                                    else
+                                    {
+                                        <tr>
+                                            <td colspan="9" class="text-center text-muted">No sales transactions found for the selected item and date range.</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                                @if (itemSalesLedgerData.Data.Any())
+                                {
+                                    <tfoot>
+                                        <tr class="grandtotal-row">
+                                            <td colspan="2"><strong>Grand Total</strong></td>
+                                            <td class="text-end"><strong>@CurrencyHelper.FormatNumber(itemSalesLedgerData.TotalQty)</strong></td>
+                                            <td class="text-end"><strong>@CurrencyHelper.FormatNumber(itemSalesLedgerData.TotalWeight)</strong></td>
+                                            <td class="text-end"></td>
+                                            <td></td>
+                                            <td class="text-end"><strong>@CurrencyHelper.FormatNumber(itemSalesLedgerData.TotalGrossAmount)</strong></td>
+                                            <td class="text-end"><strong>@CurrencyHelper.FormatNumber(itemSalesLedgerData.TotalDiscount)</strong></td>
+                                            <td class="text-end"><strong>@CurrencyHelper.FormatNumber(itemSalesLedgerData.TotalNetAmount)</strong></td>
+                                        </tr>
+                                    </tfoot>
+                                }
+                            </table>
+                        </div>
+                    </BodyContent>
+
+                    <FooterContent>
+                        <div class="row">
+                            <div class="col-md-12">
+                                <div class="average-rates">
+                                    <h6 class="mb-3"><strong>Average Rates</strong></h6>
+                                    <div class="average-rate-item">
+                                        <strong>Average Rate @CurrencyHelper.FormatNumber(itemSalesLedgerData.AverageRatePerUnit) Per Unit</strong>
+                                    </div>
+                                    <div class="average-rate-item">
+                                        <strong>@CurrencyHelper.FormatNumber(itemSalesLedgerData.AverageRatePerKgs) Per Kgs</strong>
+                                    </div>
+                                    <div class="average-rate-item">
+                                        <strong>@CurrencyHelper.FormatNumber(itemSalesLedgerData.AverageRatePerMounds) Per Mounds</strong>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </FooterContent>
+                </ReportTable>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    private DateTime fromDate;
+    private DateTime toDate = DateTime.Now;
+    private ClientItem? selectedItem = null;
+    private ItemSalesLedgerResponse? itemSalesLedgerData;
+    private bool isLoading = false;
+    private string errorMessage = string.Empty;
+    private DateTime? minDate;
+    
+    protected override async Task OnInitializedAsync()
+    {
+        // Get minimum date from session
+        minDate = await SessionService.GetMinDateAsync();
+        
+        // Set fromDate to session start_date if available, otherwise use current month start
+        if (minDate.HasValue)
+        {
+            fromDate = minDate.Value;
+        }
+        else
+        {
+            fromDate = new DateTime(DateTime.Now.Year, DateTime.Now.Month, 1);
+        }
+        
+        toDate = DateTime.Now;
+    }
+
+    private async Task LoadItemSalesLedger()
+    {
+        if (selectedItem == null)
+        {
+            errorMessage = "Please select an item.";
+            return;
+        }
+
+        if (fromDate > toDate)
+        {
+            errorMessage = "From Date cannot be greater than To Date.";
+            return;
+        }
+
+        isLoading = true;
+        errorMessage = string.Empty;
+        itemSalesLedgerData = null;
+
+        try
+        {
+            itemSalesLedgerData = await DataService.GetItemSalesLedgerAsync(
+                fromDate, 
+                toDate, 
+                selectedItem.ItemCode.Trim(),
+                selectedItem.ItemName.Trim(),
+                string.IsNullOrWhiteSpace(selectedItem.Variety) ? null : selectedItem.Variety.Trim(),
+                selectedItem.PackSize > 0 ? selectedItem.PackSize : null,
+                string.IsNullOrWhiteSpace(selectedItem.PackStat) ? null : selectedItem.PackStat.Trim()
+            );
+            
+            if (!itemSalesLedgerData.Success)
+            {
+                errorMessage = itemSalesLedgerData.Message;
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"An error occurred while loading the item sales ledger: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private bool isPreviewDisabled => isLoading || selectedItem == null;
+}
+

@@ -728,6 +728,48 @@ namespace pos_app.Client.Services
             }
         }
 
+        // Sales Journal Report
+        public async Task<SalesJournalResponse> GetSalesJournalAsync(
+            DateTime fromDate, 
+            DateTime toDate, 
+            string invoiceType = "All")
+        {
+            try
+            {
+                var client = await CreateAuthedClientAsync();
+                var url = "api/reports/sales-journal";
+                var queryParams = new List<string>();
+                
+                queryParams.Add($"fromDate={fromDate:yyyy-MM-dd}");
+                queryParams.Add($"toDate={toDate:yyyy-MM-dd}");
+                
+                if (!string.IsNullOrEmpty(invoiceType))
+                {
+                    queryParams.Add($"invoiceType={Uri.EscapeDataString(invoiceType)}");
+                }
+                
+                if (queryParams.Any())
+                {
+                    url += "?" + string.Join("&", queryParams);
+                }
+
+                var response = await client.GetAsync(url);
+                if (response.IsSuccessStatusCode)
+                {
+                    var result = await response.Content.ReadFromJsonAsync<SalesJournalResponse>();
+                    return result ?? new SalesJournalResponse { Success = false, Message = "Invalid response from server" };
+                }
+
+                var errorContent = await response.Content.ReadAsStringAsync();
+                return new SalesJournalResponse { Success = false, Message = $"Failed to fetch sales journal: {response.StatusCode}" };
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching sales journal");
+                return new SalesJournalResponse { Success = false, Message = $"Error: {ex.Message}" };
+            }
+        }
+
         // Purchase Register Report
         public async Task<PurchaseRegisterResponse> GetPurchaseRegisterAsync(
             DateTime fromDate, 

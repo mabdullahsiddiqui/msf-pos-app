@@ -1885,6 +1885,194 @@ namespace pos_app.Controllers
             }
         }
 
+        // Sales Journal Report
+        [HttpGet("sales-journal")]
+        public async Task<ActionResult<SalesJournalResponse>> GetSalesJournal(
+            [FromQuery] DateTime fromDate, 
+            [FromQuery] DateTime toDate,
+            [FromQuery] string invoiceType = "All")
+        {
+            var stopwatch = Stopwatch.StartNew();
+            try
+            {
+                var userId = GetCurrentUserId();
+                var user = await _authService.GetActiveUserAsync(userId);
+                
+                if (user == null)
+                {
+                    return BadRequest(new SalesJournalResponse
+                    {
+                        Success = false,
+                        Message = "No active database connection found. Please set up your database connection first."
+                    });
+                }
+
+                // Map invoice types to voucher prefixes
+                // Based on getinvType function: Credit -> SV, Cash -> CS, Others -> OS
+                var voucherPrefixes = new List<string>();
+                switch (invoiceType?.Trim())
+                {
+                    case "Credit":
+                        voucherPrefixes.Add("SV");
+                        break;
+                    case "Cash":
+                        voucherPrefixes.Add("CS");
+                        break;
+                    case "Others":
+                        voucherPrefixes.Add("OS");
+                        break;
+                    case "All":
+                    default:
+                        voucherPrefixes.AddRange(new[] { "SV", "CS", "OS" });
+                        break;
+                }
+
+                if (voucherPrefixes.Count == 0)
+                {
+                    return BadRequest(new SalesJournalResponse
+                    {
+                        Success = false,
+                        Message = "Invalid invoice type specified."
+                    });
+                }
+
+                var fromDateString = fromDate.ToString("yyyy/MM/dd");
+                var toDateString = toDate.ToString("yyyy/MM/dd");
+                var voucherFilter = string.Join(",", voucherPrefixes.Select(v => $"'{v}'"));
+
+                // Sales Journal SQL query - get all entries with account names
+                var salesJournalQuery = $@"
+                    SELECT 
+                        v.vouch_date as VouchDate,
+                        v.vouch_no as VouchNo,
+                        v.acc_code as AccCode,
+                        ISNULL(c.acc_name, '') as AccName,
+                        ISNULL(v.descript, '') as Description,
+                        ISNULL(v.dr_amount, 0) as Debit,
+                        ISNULL(v.cr_amount, 0) as Credit,
+                        ROW_NUMBER() OVER (PARTITION BY v.vouch_no ORDER BY v.dr_amount DESC, v.cr_amount DESC) as RowNum
+                    FROM view_gjournal v
+                    LEFT JOIN customer c ON v.acc_code = c.acc_code
+                    WHERE v.vouch_date >= '{fromDateString}' 
+                      AND v.vouch_date <= '{toDateString}'
+                      AND LEFT(v.vouch_no, 2) IN ({voucherFilter})
+                    ORDER BY v.vouch_date, v.vouch_no, RowNum";
+
+                var results = await _dataAccessService.ExecuteQueryAsync(user, salesJournalQuery, commandTimeout: 120);
+                
+                // Group entries by voucher number
+                var voucherGroups = results
+                    .GroupBy(row => 
+                        row.ContainsKey("VouchNo") ? row["VouchNo"]?.ToString() ?? "" : ""
+                    )
+                    .Where(g => !string.IsNullOrEmpty(g.Key))
+                    .Select(g => new
+                    {
+                        VoucherNo = g.Key,
+                        VoucherDate = g.First().ContainsKey("VouchDate") && DateTime.TryParse(g.First()["VouchDate"]?.ToString(), out var date) ? date : DateTime.MinValue,
+                        Entries = g.OrderBy(e => 
+                            e.ContainsKey("RowNum") && int.TryParse(e["RowNum"]?.ToString(), out var rowNum) ? rowNum : 0
+                        ).ToList()
+                    })
+                    .OrderBy(v => v.VoucherDate)
+                    .ThenBy(v => v.VoucherNo)
+                    .ToList();
+
+                var salesJournalItems = new List<SalesJournalItem>();
+                decimal totalDebit = 0;
+                decimal totalCredit = 0;
+
+                // Process each voucher
+                foreach (var voucherGroup in voucherGroups)
+                {
+                    var voucherDebit = 0m;
+                    var voucherCredit = 0m;
+                    
+                    // Process all entries for this voucher
+                    foreach (var row in voucherGroup.Entries)
+                    {
+                        var debit = row.ContainsKey("Debit") && decimal.TryParse(row["Debit"]?.ToString(), out var d) ? d : 0;
+                        var credit = row.ContainsKey("Credit") && decimal.TryParse(row["Credit"]?.ToString(), out var c) ? c : 0;
+                        
+                        voucherDebit += debit;
+                        voucherCredit += credit;
+                        
+                        // Add entry to report
+                        salesJournalItems.Add(new SalesJournalItem
+                        {
+                            Date = voucherGroup.VoucherDate,
+                            VoucherNo = voucherGroup.VoucherNo,
+                            Description = row.ContainsKey("Description") ? row["Description"]?.ToString() ?? "" : "",
+                            Debit = debit,
+                            Credit = credit,
+                            AccCode = row.ContainsKey("AccCode") ? row["AccCode"]?.ToString() ?? "" : "",
+                            AccName = row.ContainsKey("AccName") ? row["AccName"]?.ToString() ?? "" : "",
+                            IsVoucherTotal = false,
+                            IsGrandTotal = false
+                        });
+                    }
+
+                    // Add voucher total row
+                    salesJournalItems.Add(new SalesJournalItem
+                    {
+                        Date = null,
+                        VoucherNo = voucherGroup.VoucherNo, // Keep voucher number for reference
+                        Description = "Total",
+                        Debit = voucherDebit,
+                        Credit = voucherCredit,
+                        AccCode = "",
+                        AccName = "",
+                        IsVoucherTotal = true,
+                        IsGrandTotal = false
+                    });
+
+                    totalDebit += voucherDebit;
+                    totalCredit += voucherCredit;
+                }
+
+                // Add grand total row
+                if (salesJournalItems.Count > 0)
+                {
+                    salesJournalItems.Add(new SalesJournalItem
+                    {
+                        Date = null,
+                        VoucherNo = "",
+                        Description = "Grand Total",
+                        Debit = totalDebit,
+                        Credit = totalCredit,
+                        AccCode = "",
+                        AccName = "",
+                        IsVoucherTotal = false,
+                        IsGrandTotal = true
+                    });
+                }
+
+                stopwatch.Stop();
+
+                return Ok(new SalesJournalResponse
+                {
+                    Success = true,
+                    Message = "Sales Journal retrieved successfully",
+                    Data = salesJournalItems,
+                    FromDate = fromDate,
+                    ToDate = toDate,
+                    TotalDebit = totalDebit,
+                    TotalCredit = totalCredit,
+                    InvoiceType = invoiceType
+                });
+            }
+            catch (Exception ex)
+            {
+                stopwatch.Stop();
+                _logger.LogError(ex, "Error getting sales journal");
+                return StatusCode(500, new SalesJournalResponse
+                {
+                    Success = false,
+                    Message = $"Internal server error: {ex.Message}"
+                });
+            }
+        }
+
         // Purchase Register Report
         [HttpGet("purchase-register")]
         public async Task<ActionResult<PurchaseRegisterResponse>> GetPurchaseRegister(

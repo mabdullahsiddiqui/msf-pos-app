@@ -2285,6 +2285,240 @@ namespace pos_app.Controllers
             }
         }
 
+        // Sales Register Report
+        [HttpGet("sales-register")]
+        public async Task<ActionResult<SalesRegisterResponse>> GetSalesRegister(
+            [FromQuery] DateTime fromDate, 
+            [FromQuery] DateTime toDate,
+            [FromQuery] string invoiceType = "All")
+        {
+            var stopwatch = Stopwatch.StartNew();
+            try
+            {
+                var userId = GetCurrentUserId();
+                var user = await _authService.GetActiveUserAsync(userId);
+                
+                if (user == null)
+                {
+                    return BadRequest(new SalesRegisterResponse
+                    {
+                        Success = false,
+                        Message = "No active database connection found. Please set up your database connection first."
+                    });
+                }
+
+                var fromDateString = fromDate.ToString("yyyy/MM/dd");
+                var toDateString = toDate.ToString("yyyy/MM/dd");
+
+                // Build invoice type filter
+                string invoiceTypeFilter = "";
+                if (invoiceType?.Trim() != "All")
+                {
+                    invoiceTypeFilter = $"AND si.inv_type = '{invoiceType.Trim().Replace("'", "''")}'";
+                }
+
+                // Sales Register SQL query - join sale_inv with sub_sinv to get detailed line items
+                var salesRegisterQuery = $@"
+                    SELECT 
+                        si.inv_type as InvoiceType,
+                        si.inv_no as InvoiceNo,
+                        si.inv_date as Date,
+                        RTRIM(si.ac_name) as Customer,
+                        RTRIM(si.vehicle_no) as VehicleNo,
+                        RTRIM(ss.item_name) as Item,
+                        CASE 
+                            WHEN ss.as_per = 'Mounds' OR ss.as_per = 'Kgs' THEN 
+                                CASE 
+                                    WHEN ss.packing = CAST(ss.packing AS INT) THEN CAST(CAST(ss.packing AS INT) AS VARCHAR) + ' Kgs'
+                                    ELSE CAST(ss.packing AS VARCHAR) + ' Kgs'
+                                END
+                            ELSE 
+                                CASE 
+                                    WHEN ss.packing = CAST(ss.packing AS INT) THEN CAST(CAST(ss.packing AS INT) AS VARCHAR) + ' Unit'
+                                    ELSE CAST(ss.packing AS VARCHAR) + ' Unit'
+                                END
+                        END as Packing,
+                        ss.qty as Qty,
+                        ss.total_wght as Weight,
+                        ss.rate as Rate,
+                        ss.grand_tot as Amount,
+                        si.fare as Fare,
+                        si.net_amt as NetAmt,
+                        si.inv_no as InvoiceNoSort
+                    FROM sale_inv si
+                    INNER JOIN sub_sinv ss ON si.inv_no = ss.inv_no AND si.inv_type = ss.inv_type
+                    WHERE si.inv_date >= '{fromDateString}' 
+                      AND si.inv_date <= '{toDateString}'
+                      {invoiceTypeFilter}
+                    ORDER BY si.inv_date, si.inv_no, ss.item_code";
+
+                var results = await _dataAccessService.ExecuteQueryAsync(user, salesRegisterQuery, commandTimeout: 120);
+                
+                var salesRegisterItems = new List<SalesRegisterItem>();
+                decimal totalWeight = 0;
+                decimal totalAmount = 0;
+                decimal totalFare = 0;
+                decimal totalNetAmt = 0;
+                string currentInvoiceNo = "";
+                decimal invoiceWeight = 0;
+                decimal invoiceAmount = 0;
+                decimal invoiceFare = 0;
+                decimal invoiceNetAmt = 0;
+
+                // Process each row
+                foreach (var row in results)
+                {
+                    var invoiceNo = row.ContainsKey("InvoiceNo") ? row["InvoiceNo"]?.ToString()?.Trim() ?? "" : "";
+                    
+                    // If this is a new invoice and we have previous invoice data, add subtotal
+                    if (!string.IsNullOrEmpty(currentInvoiceNo) && currentInvoiceNo != invoiceNo)
+                    {
+                        // Add subtotal row for previous invoice
+                        salesRegisterItems.Add(new SalesRegisterItem
+                        {
+                            InvoiceType = "",
+                            InvoiceNo = "",
+                            Date = null,
+                            Customer = "",
+                            VehicleNo = "",
+                            Item = "Total",
+                            Packing = "",
+                            Qty = 0,
+                            Weight = invoiceWeight,
+                            Rate = 0,
+                            Amount = invoiceAmount,
+                            Fare = invoiceFare,
+                            NetAmt = invoiceNetAmt,
+                            IsSubTotal = true
+                        });
+                        
+                        invoiceWeight = 0;
+                        invoiceAmount = 0;
+                        invoiceFare = 0;
+                        invoiceNetAmt = 0;
+                    }
+
+                    // Parse row data
+                    var rowInvoiceType = row.ContainsKey("InvoiceType") ? row["InvoiceType"]?.ToString()?.Trim() ?? "" : "";
+                    var date = row.ContainsKey("Date") && DateTime.TryParse(row["Date"]?.ToString(), out var d) ? d : (DateTime?)null;
+                    var customer = row.ContainsKey("Customer") ? row["Customer"]?.ToString()?.Trim() ?? "" : "";
+                    var vehicleNo = row.ContainsKey("VehicleNo") ? row["VehicleNo"]?.ToString()?.Trim() ?? "" : "";
+                    var item = row.ContainsKey("Item") ? row["Item"]?.ToString()?.Trim() ?? "" : "";
+                    var packingRaw = row.ContainsKey("Packing") ? row["Packing"]?.ToString()?.Trim() ?? "" : "";
+                    // Format packing to remove .00 if it's a whole number
+                    var packing = packingRaw;
+                    if (!string.IsNullOrEmpty(packingRaw))
+                    {
+                        // Check if packing ends with " Kgs" or " Unit" and extract the number
+                        if (packingRaw.EndsWith(" Kgs") || packingRaw.EndsWith(" Unit"))
+                        {
+                            var suffix = packingRaw.EndsWith(" Kgs") ? " Kgs" : " Unit";
+                            var numberPart = packingRaw.Replace(suffix, "").Trim();
+                            if (decimal.TryParse(numberPart, out var packingValue))
+                            {
+                                if (packingValue % 1 == 0)
+                                {
+                                    packing = $"{(int)packingValue}{suffix}";
+                                }
+                                else
+                                {
+                                    packing = packingRaw; // Keep original if has decimals
+                                }
+                            }
+                        }
+                    }
+                    var qty = row.ContainsKey("Qty") && decimal.TryParse(row["Qty"]?.ToString(), out var q) ? q : 0;
+                    var weight = row.ContainsKey("Weight") && decimal.TryParse(row["Weight"]?.ToString(), out var w) ? w : 0;
+                    var rate = row.ContainsKey("Rate") && decimal.TryParse(row["Rate"]?.ToString(), out var r) ? r : 0;
+                    var amount = row.ContainsKey("Amount") && decimal.TryParse(row["Amount"]?.ToString(), out var a) ? a : 0;
+                    var fare = row.ContainsKey("Fare") && decimal.TryParse(row["Fare"]?.ToString(), out var f) ? f : 0;
+                    var netAmt = row.ContainsKey("NetAmt") && decimal.TryParse(row["NetAmt"]?.ToString(), out var n) ? n : 0;
+
+                    // For fare and netAmt, capture them once per invoice (on first item)
+                    if (currentInvoiceNo != invoiceNo)
+                    {
+                        invoiceFare = fare;
+                        invoiceNetAmt = netAmt;
+                        totalFare += fare;
+                        totalNetAmt += netAmt;
+                    }
+
+                    // Add item row (fare and netAmt are 0 for item rows, shown only in total row)
+                    salesRegisterItems.Add(new SalesRegisterItem
+                    {
+                        InvoiceType = rowInvoiceType,
+                        InvoiceNo = invoiceNo,
+                        Date = date,
+                        Customer = customer,
+                        VehicleNo = vehicleNo,
+                        Item = item,
+                        Packing = packing,
+                        Qty = qty,
+                        Weight = weight,
+                        Rate = rate,
+                        Amount = amount,
+                        Fare = 0, // Fare only shown in total row
+                        NetAmt = 0, // NetAmt only shown in total row
+                        IsSubTotal = false
+                    });
+
+                    invoiceWeight += weight;
+                    invoiceAmount += amount;
+                    totalWeight += weight;
+                    totalAmount += amount;
+                    currentInvoiceNo = invoiceNo;
+                }
+
+                // Add subtotal for last invoice if any
+                if (!string.IsNullOrEmpty(currentInvoiceNo) && invoiceWeight > 0)
+                {
+                    salesRegisterItems.Add(new SalesRegisterItem
+                    {
+                        InvoiceType = "",
+                        InvoiceNo = "",
+                        Date = null,
+                        Customer = "",
+                        VehicleNo = "",
+                        Item = "Total",
+                        Packing = "",
+                        Qty = 0,
+                        Weight = invoiceWeight,
+                        Rate = 0,
+                        Amount = invoiceAmount,
+                        Fare = invoiceFare,
+                        NetAmt = invoiceNetAmt,
+                        IsSubTotal = true
+                    });
+                }
+
+                stopwatch.Stop();
+
+                return Ok(new SalesRegisterResponse
+                {
+                    Success = true,
+                    Message = "Sales Register retrieved successfully",
+                    Data = salesRegisterItems,
+                    FromDate = fromDate,
+                    ToDate = toDate,
+                    InvoiceType = invoiceType ?? "All",
+                    TotalWeight = totalWeight,
+                    TotalAmount = totalAmount,
+                    TotalFare = totalFare,
+                    TotalNetAmt = totalNetAmt
+                });
+            }
+            catch (Exception ex)
+            {
+                stopwatch.Stop();
+                _logger.LogError(ex, "Error getting sales register");
+                return StatusCode(500, new SalesRegisterResponse
+                {
+                    Success = false,
+                    Message = $"Internal server error: {ex.Message}"
+                });
+            }
+        }
+
         // Item Purchase Ledger Report
         [HttpGet("item-purchase-ledger")]
         public async Task<ActionResult<ItemPurchaseLedgerResponse>> GetItemPurchaseLedger(

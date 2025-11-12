@@ -1,0 +1,283 @@
+@page "/reports/sales-register"
+@using pos_app.Client.Services
+@using pos_app.Client.Models
+@using pos_app.Client.Components.Shared
+@inject DataService DataService
+@inject SessionService SessionService
+
+<PageTitle>Sales Register Report - POS System</PageTitle>
+
+<style>
+    .subtotal-row {
+        background-color: #f8f9fa !important;
+        font-weight: bold;
+    }
+    
+    .register-table td {
+        vertical-align: top;
+    }
+    
+    .register-table .text-end {
+        text-align: right;
+    }
+    
+    /* Ensure header text is black */
+    .register-table thead th {
+        color: #000 !important;
+    }
+</style>
+
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+
+            <!-- Date Filter and Invoice Type Selection -->
+            <FilterCard Title="Sales Register (Date to Date)" IconClass="fas fa-book">
+                <div class="row mb-3">
+                    <DateInput Label="From Date:" Id="fromDate" @bind-Value="fromDate" MinDate="@minDate" />
+                    <DateInput Label="Upto Date:" Id="toDate" @bind-Value="toDate" />
+                    <div class="col-md-3">
+                        <label class="form-label">Invoice Type:</label>
+                        <select class="form-select" @bind="invoiceType">
+                            <option value="All">All</option>
+                            <option value="Credit">Credit</option>
+                            <option value="Cash">Cash</option>
+                            <option value="Others">Others</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3 d-flex align-items-end gap-2">
+                        <ActionButton Text="Preview" IconClass="fas fa-search" OnClick="LoadSalesRegister" IsLoading="@isLoading" IsDisabled="@isLoading" />
+                    </div>
+                </div>
+            </FilterCard>
+
+            <!-- Loading Indicator -->
+            @if (isLoading)
+            {
+                <LoadingSpinner Message="Generating sales register report..." />
+            }
+
+            <!-- Error Message -->
+            <ErrorAlert Message="@errorMessage" />
+
+            <!-- Report Data -->
+            @if (salesRegisterData != null && salesRegisterData.Success)
+            {
+                <ReportTable FilterableColumns="@(new List<int> { 0, 1, 2, 3, 4, 5 })">
+                    <HeaderContent>
+                        <ReportTitleHeader Title="Sales Register" IconClass="fas fa-book">
+                            <DateRangeContent>
+                                From: @salesRegisterData.FromDate.ToString("dd/MM/yyyy") 
+                                To Date: @salesRegisterData.ToDate.ToString("dd/MM/yyyy")
+                            </DateRangeContent>
+                        </ReportTitleHeader>
+                    </HeaderContent>
+                    
+                    <SummaryCards>
+                        <SummaryCard Title="Total Weight" Value="@CurrencyHelper.FormatNumber(salesRegisterData.TotalWeight)" BgColor="info" ColumnClass="col-md-3" />
+                        <SummaryCard Title="Total Amount" Value="@CurrencyHelper.FormatNumber(salesRegisterData.TotalAmount)" BgColor="success" ColumnClass="col-md-3" />
+                        <SummaryCard Title="Total Fare" Value="@CurrencyHelper.FormatNumber(salesRegisterData.TotalFare)" BgColor="warning" ColumnClass="col-md-3" />
+                        <SummaryCard Title="Total Net Amount" Value="@CurrencyHelper.FormatNumber(salesRegisterData.TotalNetAmt)" BgColor="primary" ColumnClass="col-md-3" />
+                    </SummaryCards>
+
+                    <BodyContent>
+                        <div class="table-responsive">
+                            <table class="table table-bordered register-table">
+                                <thead>
+                                    <tr>
+                                        <th>Invoice Type</th>
+                                        <th>Invoice No.</th>
+                                        <th>Date</th>
+                                        <th>Customer</th>
+                                        <th>Vehicle No</th>
+                                        <th>Item</th>
+                                        <th>Packing</th>
+                                        <th class="text-end">Qty.</th>
+                                        <th class="text-end">Weight</th>
+                                        <th class="text-end">Rate.</th>
+                                        <th class="text-end">Amount</th>
+                                        <th class="text-end">Fare</th>
+                                        <th class="text-end">Net Amt.</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @if (salesRegisterData.Data.Any())
+                                    {
+                                        @foreach (var item in salesRegisterData.Data)
+                                        {
+                                            <tr class="@(item.IsSubTotal ? "subtotal-row" : "")">
+                                                <td>@item.InvoiceType</td>
+                                                <td>@item.InvoiceNo</td>
+                                                <td>
+                                                    @if (item.Date.HasValue)
+                                                    {
+                                                        @item.Date.Value.ToString("dd/MM/yyyy")
+                                                    }
+                                                </td>
+                                                <td>@item.Customer</td>
+                                                <td>@item.VehicleNo</td>
+                                                <td>
+                                                    @if (item.IsSubTotal)
+                                                    {
+                                                        <strong>Total</strong>
+                                                    }
+                                                    else
+                                                    {
+                                                        @item.Item
+                                                    }
+                                                </td>
+                                                <td>@item.Packing</td>
+                                                <td class="text-end">
+                                                    @if (!item.IsSubTotal)
+                                                    {
+                                                        @if (item.Qty % 1 == 0)
+                                                        {
+                                                            @((int)item.Qty)
+                                                        }
+                                                        else
+                                                        {
+                                                            @CurrencyHelper.FormatNumber(item.Qty)
+                                                        }
+                                                    }
+                                                </td>
+                                                <td class="text-end">
+                                                    @if (item.IsSubTotal)
+                                                    {
+                                                        <strong>@CurrencyHelper.FormatNumber(item.Weight)</strong>
+                                                    }
+                                                    else
+                                                    {
+                                                        @CurrencyHelper.FormatNumber(item.Weight)
+                                                    }
+                                                </td>
+                                                <td class="text-end">
+                                                    @if (!item.IsSubTotal)
+                                                    {
+                                                        @CurrencyHelper.FormatNumber(item.Rate)
+                                                    }
+                                                </td>
+                                                <td class="text-end">
+                                                    @if (item.IsSubTotal)
+                                                    {
+                                                        <strong>@CurrencyHelper.FormatNumber(item.Amount)</strong>
+                                                    }
+                                                    else
+                                                    {
+                                                        @CurrencyHelper.FormatNumber(item.Amount)
+                                                    }
+                                                </td>
+                                                <td class="text-end">
+                                                    @if (item.IsSubTotal)
+                                                    {
+                                                        <strong>@CurrencyHelper.FormatNumber(item.Fare)</strong>
+                                                    }
+                                                    else
+                                                    {
+                                                        @CurrencyHelper.FormatNumber(item.Fare)
+                                                    }
+                                                </td>
+                                                <td class="text-end">
+                                                    @if (item.IsSubTotal)
+                                                    {
+                                                        <strong>@CurrencyHelper.FormatNumber(item.NetAmt)</strong>
+                                                    }
+                                                    else
+                                                    {
+                                                        @CurrencyHelper.FormatNumber(item.NetAmt)
+                                                    }
+                                                </td>
+                                            </tr>
+                                        }
+                                    }
+                                    else
+                                    {
+                                        <tr>
+                                            <td colspan="13" class="text-center text-muted">No sales transactions found for the selected period and invoice type.</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    </BodyContent>
+
+                    <FooterContent>
+                        <div class="row">
+                            <div class="col-md-3">
+                                <strong>Total Weight: @CurrencyHelper.FormatNumber(salesRegisterData.TotalWeight)</strong>
+                            </div>
+                            <div class="col-md-3">
+                                <strong>Total Amount: @CurrencyHelper.FormatNumber(salesRegisterData.TotalAmount)</strong>
+                            </div>
+                            <div class="col-md-3">
+                                <strong>Total Fare: @CurrencyHelper.FormatNumber(salesRegisterData.TotalFare)</strong>
+                            </div>
+                            <div class="col-md-3">
+                                <strong>Total Net Amount: @CurrencyHelper.FormatNumber(salesRegisterData.TotalNetAmt)</strong>
+                            </div>
+                        </div>
+                    </FooterContent>
+                </ReportTable>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    private DateTime fromDate;
+    private DateTime toDate = DateTime.Now;
+    private string invoiceType = "All";
+    private SalesRegisterResponse? salesRegisterData;
+    private bool isLoading = false;
+    private string errorMessage = string.Empty;
+    private DateTime? minDate;
+    
+    protected override async Task OnInitializedAsync()
+    {
+        // Get minimum date from session
+        minDate = await SessionService.GetMinDateAsync();
+        
+        // Set fromDate to session start_date if available, otherwise use current month start
+        if (minDate.HasValue)
+        {
+            fromDate = minDate.Value;
+        }
+        else
+        {
+            fromDate = new DateTime(DateTime.Now.Year, DateTime.Now.Month, 1);
+        }
+        
+        toDate = DateTime.Now;
+    }
+
+    private async Task LoadSalesRegister()
+    {
+        if (fromDate > toDate)
+        {
+            errorMessage = "From Date cannot be greater than To Date.";
+            return;
+        }
+
+        isLoading = true;
+        errorMessage = string.Empty;
+        salesRegisterData = null;
+
+        try
+        {
+            salesRegisterData = await DataService.GetSalesRegisterAsync(fromDate, toDate, invoiceType);
+            
+            if (!salesRegisterData.Success)
+            {
+                errorMessage = salesRegisterData.Message;
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"An error occurred while loading the sales register: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+}
+

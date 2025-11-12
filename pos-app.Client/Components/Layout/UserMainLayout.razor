@@ -435,7 +435,7 @@ else
                                 </a>
                             </li>
                             <li class="nav-item">
-                                <a class="nav-link submenu-link" href="#" @onclick="CloseSidebar">
+                                <a class="nav-link submenu-link @GetActiveClass("/reports/sales-register")" href="/reports/sales-register" @onclick="CloseSidebar">
                                     <i class="fas fa-clipboard-list"></i> Sales Register
                                 </a>
                             </li>
@@ -1047,7 +1047,8 @@ else
         }
         
         // Check if any sales report is active
-        if (currentPath.Contains("/reports/sales-journal"))
+        if (currentPath.Contains("/reports/sales-journal") ||
+            currentPath.Contains("/reports/sales-register"))
         {
             isSalesReportsExpanded = true;
         }
@@ -1223,6 +1224,7 @@ else
             var path when path.Contains("/reports/purchase-journal") => "Purchase Journal Report",
             var path when path.Contains("/reports/purchase-register") => "Purchase Register Report",
             var path when path.Contains("/reports/sales-journal") => "Sales Journal Report",
+            var path when path.Contains("/reports/sales-register") => "Sales Register Report",
             var path when path.Contains("/reports/item-purchase-register") => "Item Purchase Register Report",
             var path when path.Contains("/reports/item-purchase-summary") => "Item Purchase Summary Report",
             var path when path.Contains("/reports/supplier-tax-ledger") => "Supplier Tax Ledger Report",

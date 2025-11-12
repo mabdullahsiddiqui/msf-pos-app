@@ -812,6 +812,48 @@ namespace pos_app.Client.Services
             }
         }
 
+        // Sales Register Report
+        public async Task<SalesRegisterResponse> GetSalesRegisterAsync(
+            DateTime fromDate, 
+            DateTime toDate,
+            string invoiceType = "All")
+        {
+            try
+            {
+                var client = await CreateAuthedClientAsync();
+                var url = "api/reports/sales-register";
+                var queryParams = new List<string>();
+                
+                queryParams.Add($"fromDate={fromDate:yyyy-MM-dd}");
+                queryParams.Add($"toDate={toDate:yyyy-MM-dd}");
+                
+                if (!string.IsNullOrEmpty(invoiceType))
+                {
+                    queryParams.Add($"invoiceType={Uri.EscapeDataString(invoiceType)}");
+                }
+                
+                if (queryParams.Any())
+                {
+                    url += "?" + string.Join("&", queryParams);
+                }
+
+                var response = await client.GetAsync(url);
+                if (response.IsSuccessStatusCode)
+                {
+                    var result = await response.Content.ReadFromJsonAsync<SalesRegisterResponse>();
+                    return result ?? new SalesRegisterResponse { Success = false, Message = "Invalid response from server" };
+                }
+
+                var errorContent = await response.Content.ReadAsStringAsync();
+                return new SalesRegisterResponse { Success = false, Message = $"Failed to fetch sales register: {response.StatusCode}" };
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching sales register");
+                return new SalesRegisterResponse { Success = false, Message = $"Error: {ex.Message}" };
+            }
+        }
+
         // Item Purchase Ledger Report
         public async Task<ItemPurchaseLedgerResponse> GetItemPurchaseLedgerAsync(
             DateTime fromDate, 

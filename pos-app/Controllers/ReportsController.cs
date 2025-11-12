@@ -2097,6 +2097,191 @@ namespace pos_app.Controllers
             }
         }
 
+        // Item Purchase Ledger Report
+        [HttpGet("item-purchase-ledger")]
+        public async Task<ActionResult<ItemPurchaseLedgerResponse>> GetItemPurchaseLedger(
+            [FromQuery] DateTime fromDate, 
+            [FromQuery] DateTime toDate,
+            [FromQuery] string itemCode,
+            [FromQuery] string itemName,
+            [FromQuery] string? variety = null,
+            [FromQuery] decimal? packSize = null,
+            [FromQuery] string? status = null)
+        {
+            var stopwatch = Stopwatch.StartNew();
+            try
+            {
+                var userId = GetCurrentUserId();
+                var user = await _authService.GetActiveUserAsync(userId);
+                
+                if (user == null)
+                {
+                    return BadRequest(new ItemPurchaseLedgerResponse
+                    {
+                        Success = false,
+                        Message = "No active database connection found. Please set up your database connection first."
+                    });
+                }
+
+                if (string.IsNullOrWhiteSpace(itemCode) || string.IsNullOrWhiteSpace(itemName))
+                {
+                    return BadRequest(new ItemPurchaseLedgerResponse
+                    {
+                        Success = false,
+                        Message = "Item Code and Item Name are required."
+                    });
+                }
+
+                var fromDateString = fromDate.ToString("yyyy/MM/dd");
+                var toDateString = toDate.ToString("yyyy/MM/dd");
+
+                // Build item filter conditions
+                var itemFilters = new List<string>
+                {
+                    $"sp.item_code = '{itemCode.Trim().Replace("'", "''")}'",
+                    $"RTRIM(sp.item_name) = '{itemName.Trim().Replace("'", "''")}'"
+                };
+
+                if (!string.IsNullOrWhiteSpace(variety))
+                {
+                    itemFilters.Add($"RTRIM(sp.variety) = '{variety.Trim().Replace("'", "''")}'");
+                }
+
+                if (packSize.HasValue)
+                {
+                    itemFilters.Add($"sp.packing = {packSize.Value}");
+                }
+
+                if (!string.IsNullOrWhiteSpace(status))
+                {
+                    itemFilters.Add($"RTRIM(sp.status) = '{status.Trim().Replace("'", "''")}'");
+                }
+
+                var itemFilterClause = string.Join(" AND ", itemFilters);
+
+                // Item Purchase Ledger SQL query - join pur_inv with sub_pinv filtered by item
+                var itemPurchaseLedgerQuery = $@"
+                    SELECT 
+                        pi.inv_type as InvoiceType,
+                        pi.inv_no as InvoiceNo,
+                        pi.inv_date as Date,
+                        RTRIM(pi.ac_name) as Supplier,
+                        RTRIM(pi.vehicle_no) as VehicleNo,
+                        (sp.qty_jute + sp.qty_pp_100 + sp.qty_pp_50) as Qty,
+                        sp.total_wght as Weight,
+                        sp.rate as Rate,
+                        RTRIM(sp.as_per) as AsPer,
+                        sp.grand_tot as Amount,
+                        RTRIM(sp.item_code) as ItemCode,
+                        RTRIM(sp.item_name) as ItemName,
+                        RTRIM(sp.variety) as Variety,
+                        sp.packing as PackSize,
+                        RTRIM(sp.status) as Status
+                    FROM pur_inv pi
+                    INNER JOIN sub_pinv sp ON pi.inv_no = sp.inv_no AND pi.inv_type = sp.inv_type
+                    WHERE pi.inv_date >= '{fromDateString}' 
+                      AND pi.inv_date <= '{toDateString}'
+                      AND {itemFilterClause}
+                    ORDER BY pi.inv_date, pi.inv_no, sp.sr_no";
+
+                var results = await _dataAccessService.ExecuteQueryAsync(user, itemPurchaseLedgerQuery, commandTimeout: 120);
+                
+                var itemPurchaseLedgerItems = new List<ItemPurchaseLedgerItem>();
+                decimal totalQty = 0;
+                decimal totalWeight = 0;
+                decimal totalAmount = 0;
+                string actualItemCode = "";
+                string actualItemName = "";
+                string actualVariety = "";
+                decimal actualPackSize = 0;
+                string actualStatus = "";
+
+                // Process each row
+                foreach (var row in results)
+                {
+                    // Capture item details from first row
+                    if (string.IsNullOrEmpty(actualItemCode) && row.ContainsKey("ItemCode"))
+                    {
+                        actualItemCode = row["ItemCode"]?.ToString()?.Trim() ?? itemCode;
+                        actualItemName = row.ContainsKey("ItemName") ? row["ItemName"]?.ToString()?.Trim() ?? itemName : itemName;
+                        actualVariety = row.ContainsKey("Variety") ? row["Variety"]?.ToString()?.Trim() ?? (variety ?? "") : (variety ?? "");
+                        actualPackSize = row.ContainsKey("PackSize") && decimal.TryParse(row["PackSize"]?.ToString(), out var ps) ? ps : (packSize ?? 0);
+                        actualStatus = row.ContainsKey("Status") ? row["Status"]?.ToString()?.Trim() ?? (status ?? "") : (status ?? "");
+                    }
+
+                    // Parse row data
+                    var rowInvoiceType = row.ContainsKey("InvoiceType") ? row["InvoiceType"]?.ToString()?.Trim() ?? "" : "";
+                    var invoiceNo = row.ContainsKey("InvoiceNo") ? row["InvoiceNo"]?.ToString()?.Trim() ?? "" : "";
+                    var date = row.ContainsKey("Date") && DateTime.TryParse(row["Date"]?.ToString(), out var d) ? d : (DateTime?)null;
+                    var supplier = row.ContainsKey("Supplier") ? row["Supplier"]?.ToString()?.Trim() ?? "" : "";
+                    var vehicleNo = row.ContainsKey("VehicleNo") ? row["VehicleNo"]?.ToString()?.Trim() ?? "" : "";
+                    var qty = row.ContainsKey("Qty") && decimal.TryParse(row["Qty"]?.ToString(), out var q) ? q : 0;
+                    var weight = row.ContainsKey("Weight") && decimal.TryParse(row["Weight"]?.ToString(), out var w) ? w : 0;
+                    var rate = row.ContainsKey("Rate") && decimal.TryParse(row["Rate"]?.ToString(), out var r) ? r : 0;
+                    var asPer = row.ContainsKey("AsPer") ? row["AsPer"]?.ToString()?.Trim() ?? "" : "";
+                    var amount = row.ContainsKey("Amount") && decimal.TryParse(row["Amount"]?.ToString(), out var a) ? a : 0;
+
+                    // Add item row
+                    itemPurchaseLedgerItems.Add(new ItemPurchaseLedgerItem
+                    {
+                        InvoiceType = rowInvoiceType,
+                        InvoiceNo = invoiceNo,
+                        Date = date,
+                        Supplier = supplier,
+                        VehicleNo = vehicleNo,
+                        Qty = qty,
+                        Weight = weight,
+                        Rate = rate,
+                        AsPer = asPer,
+                        Amount = amount
+                    });
+
+                    totalQty += qty;
+                    totalWeight += weight;
+                    totalAmount += amount;
+                }
+
+                // Use actual values from database if available, otherwise use provided values
+                if (string.IsNullOrEmpty(actualItemCode))
+                {
+                    actualItemCode = itemCode;
+                    actualItemName = itemName;
+                    actualVariety = variety ?? "";
+                    actualPackSize = packSize ?? 0;
+                    actualStatus = status ?? "";
+                }
+
+                stopwatch.Stop();
+
+                return Ok(new ItemPurchaseLedgerResponse
+                {
+                    Success = true,
+                    Message = "Item Purchase Ledger retrieved successfully",
+                    Data = itemPurchaseLedgerItems,
+                    FromDate = fromDate,
+                    ToDate = toDate,
+                    ItemCode = actualItemCode,
+                    ItemName = actualItemName,
+                    Variety = actualVariety,
+                    PackSize = actualPackSize,
+                    Status = actualStatus,
+                    TotalQty = totalQty,
+                    TotalWeight = totalWeight,
+                    TotalAmount = totalAmount
+                });
+            }
+            catch (Exception ex)
+            {
+                stopwatch.Stop();
+                _logger.LogError(ex, "Error getting item purchase ledger");
+                return StatusCode(500, new ItemPurchaseLedgerResponse
+                {
+                    Success = false,
+                    Message = $"Internal server error: {ex.Message}"
+                });
+            }
+        }
+
         // Customer Aging Report
         [HttpGet("customer-aging")]
         public async Task<ActionResult<CustomerAgingResponse>> GetCustomerAging(

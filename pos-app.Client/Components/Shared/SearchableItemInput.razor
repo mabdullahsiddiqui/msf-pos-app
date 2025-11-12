@@ -1,0 +1,251 @@
+@using Microsoft.AspNetCore.Components
+@using pos_app.Client.Services
+@using pos_app.Client.Models
+@inject DataService DataService
+
+<div class="@ColumnClass">
+    <label for="@Id" class="form-label">@Label</label>
+    <div class="position-relative item-search-container">
+        <input type="text" 
+               id="@Id"
+               class="form-control pe-5 @(AdditionalClass ?? "")" 
+               placeholder="@Placeholder" 
+               value="@itemSearchTerm"
+               @oninput="OnItemSearchChanged"
+               @onfocus="@(() => ShowItemDropdown = true)"
+               @onblur="HideItemDropdown" />
+        
+        @if (!string.IsNullOrEmpty(itemSearchTerm))
+        {
+            <button type="button" 
+                    class="btn btn-sm position-absolute top-50 end-0 translate-middle-y me-2 p-0 clear-search-btn" 
+                    style="background: none; border: none; color: #6c757d; z-index: 10;"
+                    @onclick="ClearSearch"
+                    title="Clear search">
+                <i class="fas fa-times"></i>
+            </button>
+        }
+        
+        @if (ShowItemDropdown && filteredItems.Any())
+        {
+            <div class="position-absolute w-100 item-dropdown" 
+                 style="top: 100%; z-index: 99999; background: white; border: 1px solid #dee2e6; border-top: none; left: 0; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
+                @foreach (var item in filteredItems.Take(10))
+                {
+                    <div class="item-item" 
+                         @onclick="() => SelectItem(item)"
+                         @onmouseover="@(() => hoveredItem = item.ItemCode)"
+                         @onmouseout="@(() => hoveredItem = null)">
+                        <strong>@item.ItemCode.Trim()</strong> - @item.ItemName.Trim()
+                    </div>
+                }
+            </div>
+        }
+    </div>
+</div>
+
+<style>
+    .item-dropdown {
+        max-height: 200px;
+        overflow-y: auto;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        border-radius: 0 0 0.375rem 0.375rem;
+    }
+    
+    .item-item {
+        padding: 8px 12px;
+        cursor: pointer;
+        border-bottom: 1px solid #eee;
+    }
+    
+    .item-item:hover {
+        background-color: #f8f9fa;
+    }
+    
+    .item-item.selected {
+        background-color: #007bff;
+        color: white;
+    }
+    
+    .clear-search-btn:hover {
+        color: #dc3545 !important;
+        background-color: rgba(220, 53, 69, 0.1) !important;
+    }
+
+    /* Ensure dropdown is not clipped by parent containers */
+    .item-search-container {
+        overflow: visible !important;
+    }
+    
+    /* Additional dropdown styling for better visibility */
+    .item-dropdown {
+        z-index: 99999 !important;
+        position: absolute !important;
+        max-height: 300px !important;
+        overflow-y: auto !important;
+    }
+</style>
+
+@code {
+    // Label text for the field
+    [Parameter] public string Label { get; set; } = string.Empty;
+
+    // Currently selected item
+    [Parameter] public ClientItem? Value { get; set; }
+
+    // Event callback when item changes
+    [Parameter] public EventCallback<ClientItem?> ValueChanged { get; set; }
+
+    // Placeholder text
+    [Parameter] public string? Placeholder { get; set; }
+
+    // HTML id attribute
+    [Parameter] public string? Id { get; set; }
+
+    // Additional CSS classes
+    [Parameter] public string? AdditionalClass { get; set; }
+
+    // Bootstrap column class (e.g., "col-12 col-md-3", "col-12 col-sm-6 col-md-4")
+    [Parameter] public string ColumnClass { get; set; } = "col-12 col-md-3";
+
+    private List<ClientItem> allItems = new();
+    private List<ClientItem> filteredItems = new();
+    private string itemSearchTerm = "";
+    private ClientItem? selectedItem = null;
+    private string selectedItemDisplay = "";
+    private string? hoveredItem = null;
+    private bool ShowItemDropdown = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadItems();
+        
+        // If Value is already set, find and display the item
+        if (Value != null && !string.IsNullOrWhiteSpace(Value.ItemCode))
+        {
+            var item = allItems.FirstOrDefault(i => i.ItemCode.Trim() == Value.ItemCode.Trim());
+            if (item != null)
+            {
+                selectedItem = item;
+                selectedItemDisplay = $"{item.ItemCode.Trim()} - {item.ItemName.Trim()}";
+                itemSearchTerm = selectedItemDisplay;
+            }
+            else
+            {
+                selectedItemDisplay = $"{Value.ItemCode.Trim()} - {Value.ItemName.Trim()}";
+                itemSearchTerm = selectedItemDisplay;
+            }
+        }
+    }
+
+    protected override void OnParametersSet()
+    {
+        // Update display when Value changes from outside
+        if (Value != null && Value != selectedItem && !string.IsNullOrWhiteSpace(Value.ItemCode))
+        {
+            var item = allItems.FirstOrDefault(i => i.ItemCode.Trim() == Value.ItemCode.Trim());
+            if (item != null)
+            {
+                selectedItem = item;
+                selectedItemDisplay = $"{item.ItemCode.Trim()} - {item.ItemName.Trim()}";
+                itemSearchTerm = selectedItemDisplay;
+            }
+            else
+            {
+                selectedItem = Value;
+                selectedItemDisplay = $"{Value.ItemCode.Trim()} - {Value.ItemName.Trim()}";
+                itemSearchTerm = selectedItemDisplay;
+            }
+        }
+        else if (Value == null && selectedItem != null)
+        {
+            // Value was cleared
+            itemSearchTerm = "";
+            selectedItem = null;
+            selectedItemDisplay = "";
+        }
+    }
+
+    private async Task LoadItems()
+    {
+        try
+        {
+            allItems = await DataService.GetClientItemsAsync();
+            filteredItems = allItems.ToList();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading items: {ex.Message}");
+        }
+    }
+
+    private void OnItemSearchChanged(ChangeEventArgs e)
+    {
+        itemSearchTerm = e.Value?.ToString() ?? "";
+        
+        // Don't filter if we have a selected item and the search term matches it
+        if (selectedItem != null && itemSearchTerm == selectedItemDisplay)
+        {
+            filteredItems = allItems.ToList();
+            ShowItemDropdown = false;
+        }
+        else
+        {
+            if (string.IsNullOrEmpty(itemSearchTerm))
+            {
+                filteredItems = allItems.ToList();
+            }
+            else
+            {
+                var searchLower = itemSearchTerm.Trim().ToLower();
+                filteredItems = allItems.Where(i => 
+                    i.ItemCode.Trim().ToLower().Contains(searchLower) ||
+                    i.ItemName.Trim().ToLower().Contains(searchLower)
+                ).ToList();
+            }
+            
+            ShowItemDropdown = true;
+        }
+        
+        StateHasChanged();
+    }
+
+    private void SelectItem(ClientItem item)
+    {
+        selectedItem = item;
+        selectedItemDisplay = $"{item.ItemCode.Trim()} - {item.ItemName.Trim()}";
+        itemSearchTerm = selectedItemDisplay;
+        ShowItemDropdown = false;
+        
+        // Update the Value and notify parent
+        Value = selectedItem;
+        ValueChanged.InvokeAsync(selectedItem);
+        
+        StateHasChanged();
+    }
+
+    private async Task HideItemDropdown()
+    {
+        await Task.Delay(200); // Small delay to allow click events
+        ShowItemDropdown = false;
+        StateHasChanged();
+    }
+
+    private void ClearSearch()
+    {
+        itemSearchTerm = "";
+        selectedItem = null;
+        selectedItemDisplay = "";
+        filteredItems = allItems.ToList();
+        ShowItemDropdown = false;
+        
+        // Clear the Value and notify parent
+        Value = null;
+        ValueChanged.InvokeAsync((ClientItem?)null);
+        
+        StateHasChanged();
+    }
+}
+
+
+

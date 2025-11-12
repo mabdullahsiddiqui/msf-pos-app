@@ -2856,8 +2856,8 @@ namespace pos_app.Controllers
                 foreach (var row in results)
                 {
                     var supplierAcc = row.ContainsKey("SupplierAccount") ? row["SupplierAccount"]?.ToString()?.Trim() ?? "" : "";
-                    var supplierNm = row.ContainsKey("SupplierName") ? row["SupplierName"]?.ToString()?.Trim() ?? "";
-                    var ntn = row.ContainsKey("NTN") ? row["NTN"]?.ToString()?.Trim() ?? "";
+                    var supplierNm = row.ContainsKey("SupplierName") ? row["SupplierName"]?.ToString()?.Trim() ?? "" : "";
+                    var ntn = row.ContainsKey("NTN") ? row["NTN"]?.ToString()?.Trim() ?? "" : "";
                     
                     if (string.IsNullOrEmpty(supplierAcc))
                         continue;

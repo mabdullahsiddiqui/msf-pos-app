@@ -39,14 +39,8 @@
             <!-- Filter Card -->
             <FilterCard Title="Supplier Tax Ledger" IconClass="fas fa-file-invoice-dollar">
                 <div class="row mb-3">
-                    <div class="col-12 col-md-3">
-                        <label class="form-label">From A/C:</label>
-                        <AccountInput Id="fromAccount" @bind-Value="fromAccount" Placeholder="1-00-00-0000" Class="form-control" />
-                    </div>
-                    <div class="col-12 col-md-3">
-                        <label class="form-label">Upto A/C:</label>
-                        <AccountInput Id="uptoAccount" @bind-Value="uptoAccount" Placeholder="1-99-99-9999" Class="form-control" />
-                    </div>
+                    <SearchableAccountInput Label="From A/C:" Id="fromAccount" Value="@fromAccount" ValueChanged="@((string value) => fromAccount = value)" Placeholder="Search accounts..." ColumnClass="col-md-4" />
+                    <SearchableAccountInput Label="Upto A/C:" Id="uptoAccount" Value="@uptoAccount" ValueChanged="@((string value) => uptoAccount = value)" Placeholder="Search accounts..." ColumnClass="col-md-4" />
                     <DateInput Label="From Date:" Id="fromDate" @bind-Value="fromDate" MinDate="@minDate" ColumnClass="col-12 col-md-2" />
                     <DateInput Label="To Date:" Id="toDate" @bind-Value="toDate" ColumnClass="col-12 col-md-2" />
                 </div>
@@ -88,10 +82,6 @@
                 <div class="row mb-3">
                     <div class="col-12 d-flex gap-2">
                         <ActionButton Text="Preview" IconClass="fas fa-search" OnClick="LoadSupplierTaxLedger" IsLoading="@isLoading" IsDisabled="@isLoading" />
-                        @if (supplierTaxLedgerData != null && supplierTaxLedgerData.Success)
-                        {
-                            <ExportButton OnClick="ExportToExcel" IsDisabled="@isLoading" />
-                        }
                     </div>
                 </div>
             </FilterCard>
@@ -332,12 +322,6 @@
         {
             isLoading = false;
         }
-    }
-
-    private async Task ExportToExcel()
-    {
-        // TODO: Implement Excel export functionality
-        await Task.CompletedTask;
     }
 }
 

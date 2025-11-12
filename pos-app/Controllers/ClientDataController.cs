@@ -599,6 +599,38 @@ namespace pos_app.Controllers
             }
         }
 
+        // GET: api/clientdata/item-groups
+        [HttpGet("item-groups")]
+        public async Task<ActionResult> GetItemGroups()
+        {
+            try
+            {
+                var userId = GetCurrentUserId();
+                var user = await _authService.GetActiveUserAsync(userId);
+                
+                if (user == null)
+                {
+                    return BadRequest("No active database connection found. Please set up your database connection first.");
+                }
+
+                // Query item groups from the user's database
+                var query = @"
+                    SELECT 
+                        RTRIM(group_code) as GroupCode,
+                        RTRIM(group_name) as GroupName
+                    FROM item_group
+                    ORDER BY group_name";
+
+                var itemGroups = await _dataAccessService.ExecuteQueryAsync(user, query);
+                return Ok(itemGroups);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting item groups");
+                return StatusCode(500, "Internal server error");
+            }
+        }
+
         // Helper method to get current user ID
         private int GetCurrentUserId()
         {

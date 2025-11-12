@@ -1,0 +1,213 @@
+@page "/reports/item-purchase-summary"
+@using pos_app.Client.Services
+@using pos_app.Client.Models
+@using pos_app.Client.Components.Shared
+@inject DataService DataService
+@inject SessionService SessionService
+
+<PageTitle>Item Purchase Summary Report - POS System</PageTitle>
+
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <!-- Filter Card -->
+            <FilterCard Title="Item Purchase Summary" IconClass="fas fa-shopping-cart">
+                <div class="row g-3 mb-3">
+                    <DateInput Label="From Date:" Id="fromDate" @bind-Value="fromDate" MinDate="@minDate" />
+                    
+                    <DateInput Label="To Date:" Id="toDate" @bind-Value="toDate" MinDate="@minDate" />
+                    
+                    <div class="col-md-3">
+                        <label for="itemGroup" class="form-label">Item Group:</label>
+                        <select id="itemGroup" class="form-select" @bind="selectedItemGroup">
+                            <option value="">All Groups</option>
+                            @if (itemGroups.Any())
+                            {
+                                @foreach (var group in itemGroups)
+                                {
+                                    <option value="@group.GroupCode">@group.GroupName</option>
+                                }
+                            }
+                        </select>
+                    </div>
+                    
+                    <div class="col-md-3 d-flex align-items-end">
+                        <ActionButton Text="Show Report" IconClass="fas fa-chart-bar" OnClick="ShowReport" IsLoading="@isLoading" IsDisabled="@isLoading" />
+                    </div>
+                </div>
+            </FilterCard>
+
+            <!-- Loading Indicator -->
+            @if (isLoading)
+            {
+                <LoadingSpinner Message="Loading item purchase summary..." />
+            }
+
+            <!-- Error Message -->
+            <ErrorAlert Message="@errorMessage" />
+
+            <!-- Report Table -->
+            @if (reportData != null && reportData.Success && reportData.Data.Any())
+            {
+                <ReportTable FilterableColumns="@(new List<int> { 0, 1, 2 })">
+                    <HeaderContent>
+                        <h4 class="mb-3"><strong><em>Item Purchase Summary</em></strong></h4>
+                        <div class="row">
+                            <div class="col-12 col-md-4">
+                                <strong>From:</strong> @reportData.FromDate.ToString("dd/MM/yyyy") 
+                                <strong>To:</strong> @reportData.ToDate.ToString("dd/MM/yyyy")
+                            </div>
+                            @if (!string.IsNullOrEmpty(reportData.ItemGroupName))
+                            {
+                                <div class="col-12 col-md-4">
+                                    <strong>Group:</strong> @reportData.ItemGroupName
+                                </div>
+                            }
+                        </div>
+                    </HeaderContent>
+                    
+                    <SummaryCards>
+                        <SummaryCard Title="Total Items" Value="@reportData.Data.Count.ToString()" BgColor="primary" />
+                        <SummaryCard Title="Total Qty" Value="@CurrencyHelper.FormatNumber(reportData.GrandTotalQty)" BgColor="info" />
+                        <SummaryCard Title="Total Weight" Value="@($"{CurrencyHelper.FormatNumber(reportData.GrandTotalWeight)} Kg")" BgColor="warning" />
+                        <SummaryCard Title="Total Amount" Value="@CurrencyHelper.FormatNumber(reportData.GrandTotalAmount)" BgColor="success" />
+                    </SummaryCards>
+
+                    <BodyContent>
+                        <table class="table table-bordered table-striped">
+                            <thead>
+                                <tr>
+                                    <th>Item Code</th>
+                                    <th>Item Name</th>
+                                    <th>Variety</th>
+                                    <th>Pack Size</th>
+                                    <th>Status</th>
+                                    <th>Total Qty</th>
+                                    <th>Total Weight</th>
+                                    <th>Total Amount</th>
+                                    <th>Avg Rate/Unit</th>
+                                    <th>Avg Rate/Kg</th>
+                                    <th>Avg Rate/Mound</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var item in reportData.Data)
+                                {
+                                    <tr>
+                                        <td>@item.ItemCode</td>
+                                        <td>@item.ItemName</td>
+                                        <td>@item.Variety</td>
+                                        <td class="text-end">@CurrencyHelper.FormatNumber(item.Packing)</td>
+                                        <td>@item.Status</td>
+                                        <td class="text-end">@CurrencyHelper.FormatNumber(item.TotalQty)</td>
+                                        <td class="text-end">@CurrencyHelper.FormatNumber(item.TotalWeight)</td>
+                                        <td class="text-end">@CurrencyHelper.FormatNumber(item.TotalAmount)</td>
+                                        <td class="text-end">@CurrencyHelper.FormatNumber(item.AvgRatePerUnit)</td>
+                                        <td class="text-end">@CurrencyHelper.FormatNumber(item.AvgRatePerKg)</td>
+                                        <td class="text-end">@CurrencyHelper.FormatNumber(item.AvgRatePerMound)</td>
+                                    </tr>
+                                }
+                            </tbody>
+                            <tfoot>
+                                <tr class="table-dark">
+                                    <th colspan="5" class="text-end">Grand Total:</th>
+                                    <th class="text-end">@CurrencyHelper.FormatNumber(reportData.GrandTotalQty)</th>
+                                    <th class="text-end">@CurrencyHelper.FormatNumber(reportData.GrandTotalWeight)</th>
+                                    <th class="text-end">@CurrencyHelper.FormatNumber(reportData.GrandTotalAmount)</th>
+                                    <th colspan="3"></th>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </BodyContent>
+                </ReportTable>
+            }
+            else if (reportData != null && !reportData.Success)
+            {
+                <div class="alert alert-danger" role="alert">
+                    <i class="fas fa-exclamation-triangle"></i> @reportData.Message
+                </div>
+            }
+            else if (hasSearched && reportData?.Data?.Count == 0)
+            {
+                <div class="alert alert-info" role="alert">
+                    <i class="fas fa-info-circle"></i> No purchases found for the selected criteria.
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    private ItemPurchaseSummaryResponse? reportData;
+    private List<ClientItemGroup> itemGroups = new();
+    private string selectedItemGroup = "";
+    private DateTime fromDate = DateTime.Now.AddMonths(-1);
+    private DateTime toDate = DateTime.Now;
+    private DateTime? minDate;
+    private bool isLoading = false;
+    private string errorMessage = string.Empty;
+    private bool hasSearched = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Get minimum date from session
+        minDate = await SessionService.GetMinDateAsync();
+        
+        // Set from date to beginning of current month if session date is not available
+        if (minDate == null)
+        {
+            fromDate = new DateTime(DateTime.Now.Year, DateTime.Now.Month, 1);
+        }
+        else
+        {
+            fromDate = minDate.Value;
+        }
+        
+        // Load item groups for dropdown
+        await LoadItemGroups();
+    }
+
+    private async Task LoadItemGroups()
+    {
+        try
+        {
+            itemGroups = await DataService.GetItemGroupsAsync();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading item groups: {ex.Message}");
+        }
+    }
+
+    private async Task ShowReport()
+    {
+        isLoading = true;
+        errorMessage = string.Empty;
+        reportData = null;
+        hasSearched = true;
+        StateHasChanged();
+
+        try
+        {
+            reportData = await DataService.GetItemPurchaseSummaryAsync(
+                fromDate, 
+                toDate,
+                string.IsNullOrEmpty(selectedItemGroup) ? null : selectedItemGroup
+            );
+            
+            if (!reportData.Success)
+            {
+                errorMessage = reportData.Message;
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"An error occurred while loading the report: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+}

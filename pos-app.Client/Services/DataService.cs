@@ -959,5 +959,88 @@ namespace pos_app.Client.Services
                 return null;
             }
         }
+
+        // Item Purchase Summary Report
+        public async Task<ItemPurchaseSummaryResponse> GetItemPurchaseSummaryAsync(
+            DateTime fromDate, 
+            DateTime toDate, 
+            string? itemGroup = null)
+        {
+            try
+            {
+                var client = await CreateAuthedClientAsync();
+                var url = "api/reports/item-purchase-summary";
+                var queryParams = new List<string>();
+                
+                queryParams.Add($"fromDate={fromDate:yyyy-MM-dd}");
+                queryParams.Add($"toDate={toDate:yyyy-MM-dd}");
+                
+                if (!string.IsNullOrEmpty(itemGroup))
+                {
+                    queryParams.Add($"itemGroup={Uri.EscapeDataString(itemGroup)}");
+                }
+                
+                if (queryParams.Any())
+                {
+                    url += "?" + string.Join("&", queryParams);
+                }
+
+                var response = await client.GetAsync(url);
+                if (response.IsSuccessStatusCode)
+                {
+                    var result = await response.Content.ReadFromJsonAsync<ItemPurchaseSummaryResponse>();
+                    return result ?? new ItemPurchaseSummaryResponse { Success = false, Message = "Invalid response from server" };
+                }
+
+                var errorContent = await response.Content.ReadAsStringAsync();
+                return new ItemPurchaseSummaryResponse { Success = false, Message = $"Failed to fetch item purchase summary: {response.StatusCode}" };
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching item purchase summary");
+                return new ItemPurchaseSummaryResponse { Success = false, Message = $"Error: {ex.Message}" };
+            }
+        }
+
+        // Get Item Groups for dropdown
+        public async Task<List<ClientItemGroup>> GetItemGroupsAsync()
+        {
+            try
+            {
+                var client = await CreateAuthedClientAsync();
+                var response = await client.GetAsync("api/clientdata/item-groups");
+                if (response.IsSuccessStatusCode)
+                {
+                    var content = await response.Content.ReadAsStringAsync();
+                    // The API returns List<Dictionary<string, object>>, so we need to parse it
+                    var rawData = System.Text.Json.JsonSerializer.Deserialize<List<Dictionary<string, object>>>(content, new System.Text.Json.JsonSerializerOptions
+                    {
+                        PropertyNameCaseInsensitive = true
+                    });
+                    
+                    if (rawData == null)
+                        return new List<ClientItemGroup>();
+                    
+                    var itemGroups = new List<ClientItemGroup>();
+                    foreach (var item in rawData)
+                    {
+                        itemGroups.Add(new ClientItemGroup
+                        {
+                            GroupCode = item.ContainsKey("GroupCode") ? item["GroupCode"]?.ToString() ?? "" : "",
+                            GroupName = item.ContainsKey("GroupName") ? item["GroupName"]?.ToString() ?? "" : ""
+                        });
+                    }
+                    return itemGroups;
+                }
+
+                _logger.LogWarning($"Failed to fetch item groups: {response.StatusCode}");
+                return new List<ClientItemGroup>();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching item groups");
+                return new List<ClientItemGroup>();
+            }
+        }
     }
 }

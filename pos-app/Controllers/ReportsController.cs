@@ -3117,6 +3117,156 @@ namespace pos_app.Controllers
             }
         }
 
+        // Item Purchase Summary Report
+        [HttpGet("item-purchase-summary")]
+        public async Task<ActionResult<ItemPurchaseSummaryResponse>> GetItemPurchaseSummary(
+            [FromQuery] DateTime fromDate, 
+            [FromQuery] DateTime toDate,
+            [FromQuery] string? itemGroup = null)
+        {
+            var stopwatch = Stopwatch.StartNew();
+            try
+            {
+                var userId = GetCurrentUserId();
+                var user = await _authService.GetActiveUserAsync(userId);
+                
+                if (user == null)
+                {
+                    return BadRequest(new ItemPurchaseSummaryResponse
+                    {
+                        Success = false,
+                        Message = "No active database connection found. Please set up your database connection first."
+                    });
+                }
+
+                var fromDateString = fromDate.ToString("yyyy/MM/dd");
+                var toDateString = toDate.ToString("yyyy/MM/dd");
+
+                // Build item group filter
+                string itemGroupFilter = "";
+                string itemGroupName = "";
+                if (!string.IsNullOrEmpty(itemGroup) && itemGroup.Trim().ToLower() != "all")
+                {
+                    itemGroupFilter = $"AND i.item_group = '{itemGroup.Trim()}'";
+                    
+                    // Get item group name
+                    var groupNameQuery = $"SELECT RTRIM(group_name) as GroupName FROM item_group WHERE group_code = '{itemGroup.Trim()}'";
+                    var groupNameResult = await _dataAccessService.ExecuteQueryAsync(user, groupNameQuery);
+                    if (groupNameResult.Any())
+                    {
+                        itemGroupName = groupNameResult.First().ContainsKey("GroupName") ? 
+                            groupNameResult.First()["GroupName"]?.ToString() ?? "" : "";
+                    }
+                }
+
+                // Item Purchase Summary SQL query - aggregate by item with average rate calculations
+                var itemPurchaseSummaryQuery = $@"
+                    SELECT 
+                        sp.item_code as ItemCode,
+                        RTRIM(sp.item_name) as ItemName,
+                        RTRIM(sp.variety) as Variety,
+                        sp.packing as Packing,
+                        RTRIM(sp.status) as Status,
+                        SUM(sp.qty_jute + sp.qty_pp_100 + sp.qty_pp_50) as TotalQty,
+                        SUM(sp.total_wght) as TotalWeight,
+                        SUM(sp.grand_tot) as TotalAmount,
+                        -- Average rate per Unit
+                        CASE 
+                            WHEN SUM(sp.qty_jute + sp.qty_pp_100 + sp.qty_pp_50) > 0 
+                            THEN SUM(sp.grand_tot) / SUM(sp.qty_jute + sp.qty_pp_100 + sp.qty_pp_50)
+                            ELSE 0 
+                        END as AvgRatePerUnit,
+                        -- Average rate per Kg
+                        CASE 
+                            WHEN SUM(sp.total_wght) > 0 
+                            THEN SUM(sp.grand_tot) / SUM(sp.total_wght)
+                            ELSE 0 
+                        END as AvgRatePerKg,
+                        -- Average rate per Mound (40 Kg)
+                        CASE 
+                            WHEN SUM(sp.total_wght) > 0 
+                            THEN SUM(sp.grand_tot) / (SUM(sp.total_wght) / 40)
+                            ELSE 0 
+                        END as AvgRatePerMound
+                    FROM pur_inv pi
+                    INNER JOIN sub_pinv sp ON pi.inv_no = sp.inv_no AND pi.inv_type = sp.inv_type
+                    LEFT JOIN item i ON sp.item_code = i.item_code
+                    WHERE pi.inv_date >= '{fromDateString}' 
+                      AND pi.inv_date <= '{toDateString}'
+                      {itemGroupFilter}
+                    GROUP BY sp.item_code, sp.item_name, sp.variety, sp.packing, sp.status
+                    ORDER BY sp.item_name, sp.variety";
+
+                var results = await _dataAccessService.ExecuteQueryAsync(user, itemPurchaseSummaryQuery, commandTimeout: 120);
+                
+                var itemPurchaseSummaryItems = new List<ItemPurchaseSummaryItem>();
+                decimal grandTotalQty = 0;
+                decimal grandTotalWeight = 0;
+                decimal grandTotalAmount = 0;
+
+                // Process each row
+                foreach (var row in results)
+                {
+                    var itemCode = row.ContainsKey("ItemCode") ? row["ItemCode"]?.ToString() ?? "" : "";
+                    var itemName = row.ContainsKey("ItemName") ? row["ItemName"]?.ToString() ?? "" : "";
+                    var variety = row.ContainsKey("Variety") ? row["Variety"]?.ToString() ?? "" : "";
+                    var packing = row.ContainsKey("Packing") && decimal.TryParse(row["Packing"]?.ToString(), out var p) ? p : 0;
+                    var status = row.ContainsKey("Status") ? row["Status"]?.ToString() ?? "" : "";
+                    var totalQty = row.ContainsKey("TotalQty") && decimal.TryParse(row["TotalQty"]?.ToString(), out var tq) ? tq : 0;
+                    var totalWeight = row.ContainsKey("TotalWeight") && decimal.TryParse(row["TotalWeight"]?.ToString(), out var tw) ? tw : 0;
+                    var totalAmount = row.ContainsKey("TotalAmount") && decimal.TryParse(row["TotalAmount"]?.ToString(), out var ta) ? ta : 0;
+                    var avgRatePerUnit = row.ContainsKey("AvgRatePerUnit") && decimal.TryParse(row["AvgRatePerUnit"]?.ToString(), out var aru) ? aru : 0;
+                    var avgRatePerKg = row.ContainsKey("AvgRatePerKg") && decimal.TryParse(row["AvgRatePerKg"]?.ToString(), out var ark) ? ark : 0;
+                    var avgRatePerMound = row.ContainsKey("AvgRatePerMound") && decimal.TryParse(row["AvgRatePerMound"]?.ToString(), out var arm) ? arm : 0;
+
+                    itemPurchaseSummaryItems.Add(new ItemPurchaseSummaryItem
+                    {
+                        ItemCode = itemCode,
+                        ItemName = itemName,
+                        Variety = variety,
+                        Packing = packing,
+                        Status = status,
+                        TotalQty = totalQty,
+                        TotalWeight = totalWeight,
+                        TotalAmount = totalAmount,
+                        AvgRatePerUnit = avgRatePerUnit,
+                        AvgRatePerKg = avgRatePerKg,
+                        AvgRatePerMound = avgRatePerMound
+                    });
+
+                    grandTotalQty += totalQty;
+                    grandTotalWeight += totalWeight;
+                    grandTotalAmount += totalAmount;
+                }
+
+                stopwatch.Stop();
+
+                return Ok(new ItemPurchaseSummaryResponse
+                {
+                    Success = true,
+                    Message = "Item Purchase Summary Report retrieved successfully",
+                    Data = itemPurchaseSummaryItems,
+                    FromDate = fromDate,
+                    ToDate = toDate,
+                    ItemGroup = itemGroup,
+                    ItemGroupName = itemGroupName,
+                    GrandTotalQty = grandTotalQty,
+                    GrandTotalWeight = grandTotalWeight,
+                    GrandTotalAmount = grandTotalAmount
+                });
+            }
+            catch (Exception ex)
+            {
+                stopwatch.Stop();
+                _logger.LogError(ex, "Error getting item purchase summary");
+                return StatusCode(500, new ItemPurchaseSummaryResponse
+                {
+                    Success = false,
+                    Message = $"Internal server error: {ex.Message}"
+                });
+            }
+        }
+
         private int GetCurrentUserId()
         {
             // Try different claim types for user ID

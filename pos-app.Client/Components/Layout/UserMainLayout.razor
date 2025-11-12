@@ -325,7 +325,7 @@ else
                                 </a>
                             </li>
                             <li class="nav-item">
-                                <a class="nav-link submenu-link" href="#" @onclick="CloseSidebar">
+                                <a class="nav-link submenu-link @GetActiveClass("/reports/item-purchase-summary")" href="/reports/item-purchase-summary" @onclick="CloseSidebar">
                                     <i class="fas fa-file-alt"></i> Item Pur. Summary
                                 </a>
                             </li>
@@ -1216,6 +1216,7 @@ else
             var path when path.Contains("/reports/transaction-journal") => "Transaction Journal Report",
             var path when path.Contains("/reports/purchase-journal") => "Purchase Journal Report",
             var path when path.Contains("/reports/purchase-register") => "Purchase Register Report",
+            var path when path.Contains("/reports/item-purchase-summary") => "Item Purchase Summary Report",
             var path when path.Contains("/reports/customer-aging") => "Customer Aging Report",
             var path when path.Contains("/reports/supplier-aging") => "Supplier Aging Report",
             var path when path.Contains("/user/profile") => "User Profile",

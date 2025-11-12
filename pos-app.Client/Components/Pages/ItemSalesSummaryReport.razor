@@ -1,0 +1,365 @@
+@page "/reports/item-sales-summary"
+@using pos_app.Client.Services
+@using pos_app.Client.Models
+@using pos_app.Client.Components.Shared
+@using Microsoft.JSInterop
+@inject DataService DataService
+@inject SessionService SessionService
+@inject IJSRuntime JSRuntime
+
+<PageTitle>Item Sales Summary Report - POS System</PageTitle>
+
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <!-- Filter Card -->
+            <FilterCard Title="Item Sales Summary (Date to Date)" IconClass="fas fa-chart-line">
+                <div class="row g-3 mb-3">
+                    <DateInput Label="From Date:" Id="fromDate" @bind-Value="fromDate" MinDate="@minDate" />
+                    
+                    <DateInput Label="Upto Date:" Id="toDate" @bind-Value="toDate" MinDate="@minDate" />
+                    
+                    <div class="col-md-3">
+                        <label for="invoiceType" class="form-label">Invoice Type:</label>
+                        <select id="invoiceType" class="form-select" @bind="selectedInvoiceType">
+                            <option value="All">All</option>
+                            <option value="Credit">Credit</option>
+                            <option value="Cash">Cash</option>
+                            <option value="Others">Others</option>
+                        </select>
+                    </div>
+                    
+                    <div class="col-md-3">
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="checkbox" id="filterByGroup" @bind="filterByGroup" />
+                            <label class="form-check-label" for="filterByGroup">
+                                Filter By Group
+                            </label>
+                        </div>
+                        @if (filterByGroup)
+                        {
+                            <select id="itemGroup" class="form-select" @bind="selectedItemGroup">
+                                <option value="">All Groups</option>
+                                @if (itemGroups.Any())
+                                {
+                                    @foreach (var group in itemGroups)
+                                    {
+                                        <option value="@group.GroupCode">@group.GroupName</option>
+                                    }
+                                }
+                            </select>
+                        }
+                    </div>
+                    
+                    <div class="col-md-3 d-flex align-items-end gap-2">
+                        <ActionButton Text="Preview" IconClass="fas fa-search" OnClick="ShowReport" IsLoading="@isLoading" IsDisabled="@isLoading" />
+                    </div>
+                </div>
+            </FilterCard>
+
+            <!-- Loading Indicator -->
+            @if (isLoading)
+            {
+                <LoadingSpinner Message="Loading item sales summary..." />
+            }
+
+            <!-- Error Message -->
+            <ErrorAlert Message="@errorMessage" />
+
+            <!-- Report Table -->
+            @if (reportData != null && reportData.Success && reportData.Data.Any())
+            {
+                <ReportTable FilterableColumns="@(new List<int> { 0, 1, 2 })">
+                    <HeaderContent>
+                        <h4 class="mb-3"><strong><em>Item Sales Summary</em></strong></h4>
+                        <div class="row">
+                            <div class="col-12 col-md-4">
+                                <strong>From Date:</strong> @reportData.FromDate.ToString("dd/MM/yyyy") 
+                                <strong>To Date:</strong> @reportData.ToDate.ToString("dd/MM/yyyy")
+                            </div>
+                            @if (!string.IsNullOrEmpty(reportData.InvoiceType) && reportData.InvoiceType != "All")
+                            {
+                                <div class="col-12 col-md-4">
+                                    <strong>Invoice Type:</strong> @reportData.InvoiceType
+                                </div>
+                            }
+                            @if (!string.IsNullOrEmpty(reportData.ItemGroupName))
+                            {
+                                <div class="col-12 col-md-4">
+                                    <strong>Group:</strong> @reportData.ItemGroupName
+                                </div>
+                            }
+                        </div>
+                    </HeaderContent>
+                    
+                    <SummaryCards>
+                        <SummaryCard Title="Total Items" Value="@reportData.Data.Count.ToString()" BgColor="primary" />
+                        <SummaryCard Title="Total Qty" Value="@CurrencyHelper.FormatNumber(reportData.GrandTotalQty)" BgColor="info" />
+                        <SummaryCard Title="Total Weight" Value="@($"{CurrencyHelper.FormatNumber(reportData.GrandTotalWeight)} Kg")" BgColor="warning" />
+                        <SummaryCard Title="Total Amount" Value="@CurrencyHelper.FormatNumber(reportData.GrandTotalAmount)" BgColor="success" />
+                    </SummaryCards>
+
+                    <BodyContent>
+                        <table class="table table-bordered table-striped">
+                            <thead>
+                                <tr>
+                                    <th>Item Name & Description</th>
+                                    <th>Paking</th>
+                                    <th>Qty.</th>
+                                    <th>Weight</th>
+                                    <th>Amount</th>
+                                    <th colspan="3" class="text-center">Average Rate</th>
+                                </tr>
+                                <tr>
+                                    <th></th>
+                                    <th></th>
+                                    <th></th>
+                                    <th></th>
+                                    <th></th>
+                                    <th>Per Unit</th>
+                                    <th>Per Kgs.</th>
+                                    <th>Per Mounds</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @{
+                                    var groupedData = reportData.Data
+                                        .GroupBy(item => GetItemGroupKey(item))
+                                        .OrderBy(g => g.Key)
+                                        .ToList();
+                                }
+                                @foreach (var group in groupedData)
+                                {
+                                    var groupItems = group.ToList();
+                                    var groupName = GetGroupName(groupItems.First());
+                                    
+                                    @foreach (var item in groupItems.OrderBy(i => i.ItemName).ThenBy(i => i.Variety))
+                                    {
+                                        <tr>
+                                            <td>@item.ItemName @item.Variety</td>
+                                            <td class="text-end">@CurrencyHelper.FormatNumber(item.Packing) @(item.Status == "Kgs" || item.Status == "Mounds" ? "Kgs" : "Unit")</td>
+                                            <td class="text-end">@CurrencyHelper.FormatNumber(item.TotalQty)</td>
+                                            <td class="text-end">@CurrencyHelper.FormatNumber(item.TotalWeight)</td>
+                                            <td class="text-end">@CurrencyHelper.FormatNumber(item.TotalAmount)</td>
+                                            <td class="text-end">@CurrencyHelper.FormatNumber(item.AvgRatePerUnit)</td>
+                                            <td class="text-end">@CurrencyHelper.FormatNumber(item.AvgRatePerKg)</td>
+                                            <td class="text-end">@CurrencyHelper.FormatNumber(item.AvgRatePerMound)</td>
+                                        </tr>
+                                    }
+                                    
+                                    @* Group Total *@
+                                    var groupTotalQty = groupItems.Sum(i => i.TotalQty);
+                                    var groupTotalWeight = groupItems.Sum(i => i.TotalWeight);
+                                    var groupTotalAmount = groupItems.Sum(i => i.TotalAmount);
+                                    var groupAvgRatePerKg = groupTotalWeight > 0 ? groupTotalAmount / groupTotalWeight : 0;
+                                    var groupAvgRatePerMound = groupTotalWeight > 0 ? groupTotalAmount / (groupTotalWeight / 40) : 0;
+                                    <tr class="table-secondary fw-bold">
+                                        <td colspan="2"><strong>Group Total (@groupName)</strong></td>
+                                        <td class="text-end">@CurrencyHelper.FormatNumber(groupTotalQty)</td>
+                                        <td class="text-end">@CurrencyHelper.FormatNumber(groupTotalWeight)</td>
+                                        <td class="text-end">@CurrencyHelper.FormatNumber(groupTotalAmount)</td>
+                                        <td></td>
+                                        <td class="text-end">@CurrencyHelper.FormatNumber(groupAvgRatePerKg)</td>
+                                        <td class="text-end">@CurrencyHelper.FormatNumber(groupAvgRatePerMound)</td>
+                                    </tr>
+                                }
+                            </tbody>
+                            <tfoot>
+                                <tr class="table-dark">
+                                    <th colspan="2" class="text-end">Grand Total:</th>
+                                    <th class="text-end">@CurrencyHelper.FormatNumber(reportData.GrandTotalQty)</th>
+                                    <th class="text-end">@CurrencyHelper.FormatNumber(reportData.GrandTotalWeight)</th>
+                                    <th class="text-end">@CurrencyHelper.FormatNumber(reportData.GrandTotalAmount)</th>
+                                    <th colspan="3"></th>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </BodyContent>
+                </ReportTable>
+            }
+            else if (reportData != null && !reportData.Success)
+            {
+                <div class="alert alert-danger" role="alert">
+                    <i class="fas fa-exclamation-triangle"></i> @reportData.Message
+                </div>
+            }
+            else if (hasSearched && reportData?.Data?.Count == 0)
+            {
+                <div class="alert alert-info" role="alert">
+                    <i class="fas fa-info-circle"></i> No sales found for the selected criteria.
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    private ItemSalesSummaryResponse? reportData;
+    private List<ClientItemGroup> itemGroups = new();
+    private string selectedInvoiceType = "All";
+    private string selectedItemGroup = "";
+    private bool filterByGroup = false;
+    private DateTime fromDate = DateTime.Now.AddMonths(-1);
+    private DateTime toDate = DateTime.Now;
+    private DateTime? minDate;
+    private bool isLoading = false;
+    private bool isExporting = false;
+    private string errorMessage = string.Empty;
+    private bool hasSearched = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Get minimum date from session
+        minDate = await SessionService.GetMinDateAsync();
+        
+        // Set from date to beginning of current month if session date is not available
+        if (minDate == null)
+        {
+            fromDate = new DateTime(DateTime.Now.Year, DateTime.Now.Month, 1);
+        }
+        else
+        {
+            fromDate = minDate.Value;
+        }
+        
+        // Load item groups for dropdown
+        await LoadItemGroups();
+    }
+
+    private async Task LoadItemGroups()
+    {
+        try
+        {
+            itemGroups = await DataService.GetItemGroupsAsync();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading item groups: {ex.Message}");
+        }
+    }
+
+    private async Task ShowReport()
+    {
+        isLoading = true;
+        errorMessage = string.Empty;
+        reportData = null;
+        hasSearched = true;
+        StateHasChanged();
+
+        try
+        {
+            var invoiceType = selectedInvoiceType == "All" ? null : selectedInvoiceType;
+            var itemGroup = filterByGroup && !string.IsNullOrEmpty(selectedItemGroup) ? selectedItemGroup : null;
+            
+            reportData = await DataService.GetItemSalesSummaryAsync(
+                fromDate, 
+                toDate,
+                invoiceType,
+                itemGroup
+            );
+            
+            if (!reportData.Success)
+            {
+                errorMessage = reportData.Message;
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"An error occurred while loading the report: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task ExportToExcel()
+    {
+        if (reportData == null || !reportData.Success || !reportData.Data.Any())
+            return;
+
+        isExporting = true;
+        StateHasChanged();
+
+        try
+        {
+            // Create CSV content
+            var csv = new System.Text.StringBuilder();
+            
+            // Header
+            csv.AppendLine("Item Sales Summary Report");
+            csv.AppendLine($"From Date: {reportData.FromDate:dd/MM/yyyy} To Date: {reportData.ToDate:dd/MM/yyyy}");
+            if (!string.IsNullOrEmpty(reportData.InvoiceType) && reportData.InvoiceType != "All")
+            {
+                csv.AppendLine($"Invoice Type: {reportData.InvoiceType}");
+            }
+            if (!string.IsNullOrEmpty(reportData.ItemGroupName))
+            {
+                csv.AppendLine($"Group: {reportData.ItemGroupName}");
+            }
+            csv.AppendLine();
+            
+            // Column headers
+            csv.AppendLine("Item Name & Description,Paking,Qty.,Weight,Amount,Per Unit,Per Kgs.,Per Mounds");
+            
+            // Data rows
+            var groupedData = reportData.Data
+                .GroupBy(item => GetItemGroupKey(item))
+                .OrderBy(g => g.Key)
+                .ToList();
+                
+            foreach (var group in groupedData)
+            {
+                var groupItems = group.ToList();
+                foreach (var item in groupItems.OrderBy(i => i.ItemName).ThenBy(i => i.Variety))
+                {
+                    csv.AppendLine($"{item.ItemName} {item.Variety},{item.Packing} {item.Status}," +
+                        $"{item.TotalQty},{item.TotalWeight},{item.TotalAmount}," +
+                        $"{item.AvgRatePerUnit},{item.AvgRatePerKg},{item.AvgRatePerMound}");
+                }
+                
+                // Group total
+                var groupTotalQty = groupItems.Sum(i => i.TotalQty);
+                var groupTotalWeight = groupItems.Sum(i => i.TotalWeight);
+                var groupTotalAmount = groupItems.Sum(i => i.TotalAmount);
+                csv.AppendLine($"Group Total ({GetGroupName(groupItems.First())}),,{groupTotalQty},{groupTotalWeight},{groupTotalAmount},,,");
+            }
+            
+            // Grand total
+            csv.AppendLine($"Grand Total,,{reportData.GrandTotalQty},{reportData.GrandTotalWeight},{reportData.GrandTotalAmount},,,");
+            
+            // Download file
+            var fileName = $"ItemSalesSummary_{DateTime.Now:yyyyMMdd_HHmmss}.csv";
+            await DownloadFile(csv.ToString(), fileName, "text/csv");
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error exporting to Excel: {ex.Message}";
+        }
+        finally
+        {
+            isExporting = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task DownloadFile(string content, string fileName, string contentType)
+    {
+        // Use JavaScript interop to trigger download
+        await JSRuntime.InvokeVoidAsync("downloadFile", fileName, content, contentType);
+    }
+
+    private string GetItemGroupKey(ItemSalesSummaryItem item)
+    {
+        // Extract group name from item name (e.g., "ATTA 10KG SPECIAL" -> "ATTA")
+        var parts = item.ItemName.Trim().Split(' ');
+        return parts.Length > 0 ? parts[0] : "OTHER";
+    }
+
+    private string GetGroupName(ItemSalesSummaryItem item)
+    {
+        return GetItemGroupKey(item);
+    }
+}
+

@@ -1214,6 +1214,45 @@ namespace pos_app.Client.Services
             }
         }
 
+        // Item Sales Summary Report
+        public async Task<ItemSalesSummaryResponse> GetItemSalesSummaryAsync(
+            DateTime fromDate, 
+            DateTime toDate, 
+            string? invoiceType = null, 
+            string? itemGroup = null)
+        {
+            try
+            {
+                var client = await CreateAuthedClientAsync();
+                var url = $"api/reports/item-sales-summary?fromDate={fromDate:yyyy-MM-dd}&toDate={toDate:yyyy-MM-dd}";
+                
+                if (!string.IsNullOrEmpty(invoiceType))
+                {
+                    url += $"&invoiceType={Uri.EscapeDataString(invoiceType)}";
+                }
+                
+                if (!string.IsNullOrEmpty(itemGroup))
+                {
+                    url += $"&itemGroup={Uri.EscapeDataString(itemGroup)}";
+                }
+                
+                var response = await client.GetAsync(url);
+                if (response.IsSuccessStatusCode)
+                {
+                    var result = await response.Content.ReadFromJsonAsync<ItemSalesSummaryResponse>();
+                    return result ?? new ItemSalesSummaryResponse { Success = false, Message = "Invalid response from server" };
+                }
+
+                var errorContent = await response.Content.ReadAsStringAsync();
+                return new ItemSalesSummaryResponse { Success = false, Message = $"Failed to fetch item sales summary: {response.StatusCode}" };
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching item sales summary");
+                return new ItemSalesSummaryResponse { Success = false, Message = $"Error: {ex.Message}" };
+            }
+        }
+
         // Get Item Groups for dropdown
         public async Task<List<ClientItemGroup>> GetItemGroupsAsync()
         {

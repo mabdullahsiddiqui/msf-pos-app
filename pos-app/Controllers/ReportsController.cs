@@ -3065,11 +3065,23 @@ namespace pos_app.Controllers
                 }
 
                 string baseQuery = "";
-                string orderByClause = "";
 
                 if (reportType == "Detail")
                 {
-                    // Detail Mode: Show all line items grouped by customer
+                    // Detail Mode: Show all line items
+                    // If specific customer selected, group by item; otherwise group by customer then item
+                    string orderByClause;
+                    if (!string.IsNullOrWhiteSpace(customerAccount) && customerAccount.Trim() != "0-00-00-0000")
+                    {
+                        // Specific customer: group by item first
+                        orderByClause = "ORDER BY ss.item_code, ss.item_name, si.inv_date, si.inv_no";
+                    }
+                    else
+                    {
+                        // All customers: group by customer then item
+                        orderByClause = "ORDER BY si.ac_code, si.ac_name, ss.item_code, ss.item_name, si.inv_date, si.inv_no";
+                    }
+                    
                     baseQuery = $@"
                         SELECT 
                             si.inv_no as InvoiceNo,
@@ -3095,7 +3107,7 @@ namespace pos_app.Controllers
                           AND si.inv_date <= '{toDateString}'
                           {customerFilter}
                           {itemFilter}
-                        ORDER BY si.ac_code, si.ac_name, si.inv_date, si.inv_no, ss.item_code";
+                        {orderByClause}";
                 }
                 else if (reportType == "Summary")
                 {
@@ -3241,16 +3253,26 @@ namespace pos_app.Controllers
                 string currentCustomerAccount = "";
                 string currentInvoiceNo = "";
                 string currentCustomerName = "";
+                string currentItemCode = "";
+                string currentItemName = "";
                 decimal customerQty = 0;
                 decimal customerWeight = 0;
                 decimal customerAmount = 0;
                 decimal customerTaxAmount = 0;
                 decimal customerCommission = 0;
+                decimal itemQty = 0;
+                decimal itemWeight = 0;
+                decimal itemAmount = 0;
+                decimal itemTaxAmount = 0;
+                decimal itemCommission = 0;
                 decimal invoiceQty = 0;
                 decimal invoiceWeight = 0;
                 decimal invoiceAmount = 0;
                 decimal invoiceTaxAmount = 0;
                 decimal invoiceCommission = 0;
+                
+                // Check if specific customer is selected for Detail mode
+                bool isSpecificCustomer = reportType == "Detail" && !string.IsNullOrWhiteSpace(customerAccount) && customerAccount.Trim() != "0-00-00-0000";
 
                 foreach (var row in results)
                 {
@@ -3292,9 +3314,67 @@ namespace pos_app.Controllers
                         rate = rowAverageRatePerUnit;
                     }
 
+                    // Handle item grouping for Detail mode when specific customer is selected
+                    if (isSpecificCustomer && !string.IsNullOrEmpty(currentItemCode) && currentItemCode != rowItemCode)
+                    {
+                        // Add item subtotal row
+                        ledgerItems.Add(new CustomerSalesLedgerItem
+                        {
+                            CustomerAccount = currentCustomerAccount,
+                            CustomerName = currentCustomerName,
+                            ItemName = "Total",
+                            Qty = itemQty,
+                            TotalWeight = itemWeight,
+                            NetAmount = itemAmount,
+                            TaxAmount = itemTaxAmount,
+                            Commission = itemCommission,
+                            IsSubTotal = true
+                        });
+
+                        // Reset item totals
+                        itemQty = 0;
+                        itemWeight = 0;
+                        itemAmount = 0;
+                        itemTaxAmount = 0;
+                        itemCommission = 0;
+                    }
+
+                    // Add item header row when a new item starts (for Detail mode with specific customer)
+                    if (isSpecificCustomer && (string.IsNullOrEmpty(currentItemCode) || currentItemCode != rowItemCode))
+                    {
+                        ledgerItems.Add(new CustomerSalesLedgerItem
+                        {
+                            CustomerAccount = rowCustomerAccount,
+                            CustomerName = rowCustomerName,
+                            ItemCode = rowItemCode,
+                            ItemName = rowItemName,
+                            PackSize = rowPackSize,
+                            Status = rowStatus,
+                            Variety = rowVariety,
+                            IsItemHeader = true
+                        });
+                    }
+
                     // Handle customer grouping for Detail and Summary modes
                     if ((reportType == "Detail" || reportType == "Summary") && !string.IsNullOrEmpty(currentCustomerAccount) && currentCustomerAccount != rowCustomerAccount)
                     {
+                        // Add item subtotal if specific customer and item was being tracked
+                        if (isSpecificCustomer && !string.IsNullOrEmpty(currentItemCode) && itemQty > 0)
+                        {
+                            ledgerItems.Add(new CustomerSalesLedgerItem
+                            {
+                                CustomerAccount = currentCustomerAccount,
+                                CustomerName = currentCustomerName,
+                                ItemName = "Total",
+                                Qty = itemQty,
+                                TotalWeight = itemWeight,
+                                NetAmount = itemAmount,
+                                TaxAmount = itemTaxAmount,
+                                Commission = itemCommission,
+                                IsSubTotal = true
+                            });
+                        }
+                        
                         // Add customer total row
                         ledgerItems.Add(new CustomerSalesLedgerItem
                         {
@@ -3315,6 +3395,13 @@ namespace pos_app.Controllers
                         customerAmount = 0;
                         customerTaxAmount = 0;
                         customerCommission = 0;
+                        
+                        // Reset item totals for new customer
+                        itemQty = 0;
+                        itemWeight = 0;
+                        itemAmount = 0;
+                        itemTaxAmount = 0;
+                        itemCommission = 0;
                     }
 
                     // Handle invoice grouping for Invoice Wise mode
@@ -3382,6 +3469,16 @@ namespace pos_app.Controllers
                     customerTaxAmount += taxAmount;
                     customerCommission += commission;
 
+                    // Accumulate item totals (for Detail mode with specific customer)
+                    if (isSpecificCustomer)
+                    {
+                        itemQty += qty;
+                        itemWeight += weight;
+                        itemAmount += netAmount;
+                        itemTaxAmount += taxAmount;
+                        itemCommission += commission;
+                    }
+
                     // Accumulate invoice totals
                     invoiceQty += qty;
                     invoiceWeight += weight;
@@ -3392,6 +3489,25 @@ namespace pos_app.Controllers
                     currentCustomerAccount = rowCustomerAccount;
                     currentCustomerName = rowCustomerName;
                     currentInvoiceNo = invoiceNo;
+                    currentItemCode = rowItemCode;
+                    currentItemName = rowItemName;
+                }
+
+                // Add final item subtotal if needed (for Detail mode with specific customer)
+                if (isSpecificCustomer && !string.IsNullOrEmpty(currentItemCode) && itemQty > 0)
+                {
+                    ledgerItems.Add(new CustomerSalesLedgerItem
+                    {
+                        CustomerAccount = currentCustomerAccount,
+                        CustomerName = currentCustomerName,
+                        ItemName = "Total",
+                        Qty = itemQty,
+                        TotalWeight = itemWeight,
+                        NetAmount = itemAmount,
+                        TaxAmount = itemTaxAmount,
+                        Commission = itemCommission,
+                        IsSubTotal = true
+                    });
                 }
 
                 // Add final customer total if needed

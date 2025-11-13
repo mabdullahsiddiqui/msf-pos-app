@@ -38,6 +38,11 @@
         font-weight: 600;
     }
 
+    .item-header-row {
+        background-color: #f8f9fa !important;
+        font-weight: 600;
+    }
+
     /* Hide FilterCard header when title is empty and style the body */
     .filter-card .filter-card-header:has(span:empty) {
         display: none;
@@ -249,7 +254,7 @@
                                             <th>Invoice</th>
                                             <th>Date</th>
                                         }
-                                        @if (reportType == "Detail")
+                                        @if (reportType == "Detail" && allCustomers)
                                         {
                                             <th>Customer</th>
                                         }
@@ -257,8 +262,11 @@
                                         {
                                             <th>Item code</th>
                                         }
-                                        <th>Item Name</th>
-                                        @if ((reportType == "Summary" && !taxReportSummary) || reportType == "Detail" || reportType == "Invoice Wise")
+                                        @if (!(reportType == "Detail" && !allCustomers))
+                                        {
+                                            <th>Item Name</th>
+                                        }
+                                        @if ((reportType == "Summary" && !taxReportSummary) || (reportType == "Detail" && allCustomers) || reportType == "Invoice Wise")
                                         {
                                             <th>Pack Size</th>
                                         }
@@ -303,8 +311,43 @@
                                     @if (ledgerData.Data.Any())
                                     {
                                         string currentCustomer = "";
+                                        string currentItemCodeForHeader = "";
                                         @foreach (var item in ledgerData.Data)
                                         {
+                                            // Show item header for Detail mode with specific customer
+                                            bool isDetailSpecificCustomer = reportType == "Detail" && !allCustomers;
+                                            if (isDetailSpecificCustomer && item.IsItemHeader)
+                                            {
+                                                // Calculate colspan: Invoice, Date, Qty, Weight, Rate, As per, Net Amt
+                                                int headerColSpan = 2; // Invoice, Date
+                                                headerColSpan += 5; // Qty, Weight, Rate, As per, Net Amt
+                                                if (taxReport || taxReportSummary)
+                                                {
+                                                    headerColSpan += 1; // Tax Amount
+                                                    if (taxReportSummary)
+                                                    {
+                                                        headerColSpan += 2; // Commission Rate, Commission
+                                                    }
+                                                }
+                                                
+                                                <tr class="item-header-row">
+                                                    <td colspan="@headerColSpan" class="fw-bold bg-light">
+                                                        @item.ItemName
+                                                        @if (item.PackSize > 0 && !string.IsNullOrEmpty(item.Status))
+                                                        {
+                                                            <text> @CurrencyHelper.FormatNumber(item.PackSize) @item.Status</text>
+                                                        }
+                                                    </td>
+                                                </tr>
+                                                currentItemCodeForHeader = item.ItemCode;
+                                            }
+                                            
+                                            // Skip rendering item header rows as regular rows
+                                            if (item.IsItemHeader)
+                                            {
+                                                continue;
+                                            }
+                                            
                                             // Show customer header for Summary mode (before first item of each customer)
                                             @if (reportType == "Summary" && !string.IsNullOrEmpty(item.CustomerName) && item.CustomerName != currentCustomer && !item.IsCustomerTotal)
                                             {
@@ -350,7 +393,7 @@
                                                         }
                                                     </td>
                                                 }
-                                                @if (reportType == "Detail")
+                                                @if (reportType == "Detail" && allCustomers)
                                                 {
                                                     <td>
                                                         @if (item.IsCustomerTotal)
@@ -372,21 +415,28 @@
                                                         }
                                                     </td>
                                                 }
-                                                <td>
-                                                    @if (item.IsCustomerTotal || item.IsInvoiceTotal || item.IsSubTotal)
-                                                    {
-                                                        <strong>@item.ItemName</strong>
-                                                    }
-                                                    else
-                                                    {
-                                                        @item.ItemName
-                                                        @if (!string.IsNullOrEmpty(item.Variety))
+                                                @if (!(reportType == "Detail" && !allCustomers))
+                                                {
+                                                    <td>
+                                                        @if (item.IsCustomerTotal || item.IsInvoiceTotal || item.IsSubTotal)
                                                         {
-                                                            <br /><small class="text-muted">@item.Variety</small>
+                                                            <strong>@item.ItemName</strong>
                                                         }
-                                                    }
-                                                </td>
-                                                @if ((reportType == "Summary" && !taxReportSummary) || reportType == "Detail" || reportType == "Invoice Wise")
+                                                        else
+                                                        {
+                                                            @item.ItemName
+                                                            @if (!string.IsNullOrEmpty(item.Variety))
+                                                            {
+                                                                <br /><small class="text-muted">@item.Variety</small>
+                                                            }
+                                                            @if (reportType == "Detail" && item.PackSize > 0 && !string.IsNullOrEmpty(item.Status))
+                                                            {
+                                                                <br /><small class="text-muted">Packing @CurrencyHelper.FormatNumber(item.PackSize) @item.Status</small>
+                                                            }
+                                                        }
+                                                    </td>
+                                                }
+                                                @if ((reportType == "Summary" && !taxReportSummary) || (reportType == "Detail" && allCustomers) || reportType == "Invoice Wise")
                                                 {
                                                     <td>
                                                         @if (!item.IsCustomerTotal && !item.IsInvoiceTotal && !item.IsSubTotal)
@@ -703,16 +753,28 @@
 
     private int GetColumnCount()
     {
-        int count = 3; // Base columns: Item Name, Qty, Total Weight, Net Amount
+        int count = 2; // Base columns: Qty, Total Weight, Net Amount
         
         if (reportType == "Detail" || reportType == "Invoice Wise")
         {
-            count += 3; // Invoice, Date, Pack Size, Rate, As per
+            count += 3; // Invoice, Date, Rate, As per
         }
         
-        if (reportType == "Detail" || reportType == "Summary")
+        if (reportType == "Detail" && allCustomers)
         {
-            count += 1; // Customer
+            count += 1; // Customer (only shown when all customers)
+        }
+        
+        // Item Name column (hidden for Detail mode with specific customer)
+        if (!(reportType == "Detail" && !allCustomers))
+        {
+            count += 1;
+        }
+        
+        // Pack Size column (hidden for Detail mode with specific customer)
+        if ((reportType == "Summary" && !taxReportSummary) || (reportType == "Detail" && allCustomers) || reportType == "Invoice Wise")
+        {
+            count += 1;
         }
         
         if (taxReport || taxReportSummary)

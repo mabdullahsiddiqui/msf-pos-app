@@ -44,6 +44,7 @@ namespace pos_app.Models
         public bool IsSubTotal { get; set; } = false;
         public bool IsCustomerTotal { get; set; } = false;
         public bool IsInvoiceTotal { get; set; } = false;
+        public bool IsItemHeader { get; set; } = false;
     }
 
     public class CustomerSalesLedgerResponse

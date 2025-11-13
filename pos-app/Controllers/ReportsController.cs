@@ -2956,6 +2956,522 @@ namespace pos_app.Controllers
             }
         }
 
+        // Customer Sales Ledger Report
+        [HttpGet("customer-sales-ledger")]
+        public async Task<ActionResult<CustomerSalesLedgerResponse>> GetCustomerSalesLedger(
+            [FromQuery] DateTime fromDate,
+            [FromQuery] DateTime toDate,
+            [FromQuery] string? customerAccount = null,
+            [FromQuery] string? customerName = null,
+            [FromQuery] string reportType = "Summary",
+            [FromQuery] bool taxReport = false,
+            [FromQuery] bool taxReportSummary = false,
+            [FromQuery] string? itemCode = null,
+            [FromQuery] string? itemName = null,
+            [FromQuery] string? variety = null,
+            [FromQuery] decimal? packSize = null,
+            [FromQuery] string? status = null)
+        {
+            var stopwatch = Stopwatch.StartNew();
+            try
+            {
+                var userId = GetCurrentUserId();
+                var user = await _authService.GetActiveUserAsync(userId);
+                
+                if (user == null)
+                {
+                    return BadRequest(new CustomerSalesLedgerResponse
+                    {
+                        Success = false,
+                        Message = "No active database connection found. Please set up your database connection first."
+                    });
+                }
+
+                var fromDateString = fromDate.ToString("yyyy/MM/dd");
+                var toDateString = toDate.ToString("yyyy/MM/dd");
+
+                // Build customer filter
+                string customerFilter = "";
+                if (!string.IsNullOrWhiteSpace(customerAccount) && customerAccount.Trim() != "0-00-00-0000")
+                {
+                    customerFilter = $"AND si.ac_code = '{customerAccount.Trim().Replace("'", "''")}'";
+                }
+
+                // Build item filter (if single item report)
+                string itemFilter = "";
+                bool isSingleItemReport = !string.IsNullOrWhiteSpace(itemCode) && !string.IsNullOrWhiteSpace(itemName);
+                if (isSingleItemReport)
+                {
+                    var itemFilters = new List<string>
+                    {
+                        $"ss.item_code = '{itemCode.Trim().Replace("'", "''")}'",
+                        $"RTRIM(ss.item_name) = '{itemName.Trim().Replace("'", "''")}'"
+                    };
+
+                    if (!string.IsNullOrWhiteSpace(variety))
+                    {
+                        itemFilters.Add($"RTRIM(ss.variety) = '{variety.Trim().Replace("'", "''")}'");
+                    }
+
+                    if (packSize.HasValue)
+                    {
+                        itemFilters.Add($"ss.packing = {packSize.Value}");
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(status))
+                    {
+                        itemFilters.Add($"RTRIM(ss.status) = '{status.Trim().Replace("'", "''")}'");
+                    }
+
+                    itemFilter = "AND " + string.Join(" AND ", itemFilters);
+                }
+
+                // Build tax fields based on report type
+                string taxFields = "";
+                string taxGroupBy = "";
+                // If both are true, prioritize taxReportSummary
+                bool useTaxReportSummary = taxReportSummary;
+                bool useTaxReport = taxReport && !taxReportSummary;
+                
+                if (useTaxReport || useTaxReportSummary)
+                {
+                    if (useTaxReportSummary)
+                    {
+                        // Tax Report Summary: Calculate commission-based tax
+                        taxFields = @",
+                            CASE 
+                                WHEN i.item_group IN ('01', '02') THEN 0.15
+                                WHEN i.item_group = '04' THEN 0.09
+                                ELSE 0
+                            END as CommissionRate,
+                            CASE 
+                                WHEN i.item_group IN ('01', '02') THEN ss.grand_tot * 0.15
+                                WHEN i.item_group = '04' THEN ss.grand_tot * 0.09
+                                ELSE 0
+                            END as Commission,
+                            CASE 
+                                WHEN i.item_group IN ('01', '02') THEN (ss.grand_tot * 0.15) * 0.24
+                                WHEN i.item_group = '04' THEN (ss.grand_tot * 0.09) * 0.24
+                                ELSE 0
+                            END as TaxAmount";
+                    }
+                    else
+                    {
+                        // Tax Report: Use tax from sale_inv
+                        taxFields = @",
+                            si.sale_tax as TaxRate,
+                            si.stax_amt as TaxAmount";
+                    }
+                }
+
+                string baseQuery = "";
+                string orderByClause = "";
+
+                if (reportType == "Detail")
+                {
+                    // Detail Mode: Show all line items grouped by customer
+                    baseQuery = $@"
+                        SELECT 
+                            si.inv_no as InvoiceNo,
+                            si.inv_date as Date,
+                            RTRIM(si.inv_type) as InvoiceType,
+                            si.ac_code as CustomerAccount,
+                            RTRIM(si.ac_name) as CustomerName,
+                            RTRIM(ss.item_code) as ItemCode,
+                            RTRIM(ss.item_name) as ItemName,
+                            RTRIM(ss.variety) as Variety,
+                            ss.packing as PackSize,
+                            RTRIM(ss.status) as Status,
+                            ss.qty as Qty,
+                            ss.total_wght as TotalWeight,
+                            ss.rate as Rate,
+                            RTRIM(ss.as_per) as AsPer,
+                            ss.grand_tot as NetAmount
+                            {taxFields}
+                        FROM sale_inv si
+                        INNER JOIN sub_sinv ss ON si.inv_no = ss.inv_no AND si.inv_type = ss.inv_type
+                        LEFT JOIN item i ON ss.item_code = i.item_code
+                        WHERE si.inv_date >= '{fromDateString}' 
+                          AND si.inv_date <= '{toDateString}'
+                          {customerFilter}
+                          {itemFilter}
+                        ORDER BY si.ac_code, si.ac_name, si.inv_date, si.inv_no, ss.item_code";
+                }
+                else if (reportType == "Summary")
+                {
+                    // Summary Mode: Aggregate by customer and item
+                    // For taxReport (not taxReportSummary), we need to calculate tax proportionally
+                    string summaryTaxFields = taxFields;
+                    if (useTaxReport)
+                    {
+                        // Calculate tax proportionally based on item amount vs invoice total
+                        summaryTaxFields = @",
+                            AVG(si.sale_tax) as TaxRate,
+                            SUM(CASE 
+                                WHEN si.net_amt > 0 
+                                THEN (ss.grand_tot / si.net_amt) * si.stax_amt
+                                ELSE 0
+                            END) as TaxAmount";
+                    }
+                    
+                    // For Tax Report Summary, group by item_group instead of individual items
+                    if (taxReportSummary)
+                    {
+                        // For Tax Report Summary, aggregate commission and tax by item_group
+                        string taxSummaryFields = @",
+                            MAX(CASE 
+                                WHEN i.item_group IN ('01', '02') THEN 0.15
+                                WHEN i.item_group = '04' THEN 0.09
+                                ELSE 0
+                            END) as CommissionRate,
+                            SUM(CASE 
+                                WHEN i.item_group IN ('01', '02') THEN ss.grand_tot * 0.15
+                                WHEN i.item_group = '04' THEN ss.grand_tot * 0.09
+                                ELSE 0
+                            END) as Commission,
+                            SUM(CASE 
+                                WHEN i.item_group IN ('01', '02') THEN (ss.grand_tot * 0.15) * 0.24
+                                WHEN i.item_group = '04' THEN (ss.grand_tot * 0.09) * 0.24
+                                ELSE 0
+                            END) as TaxAmount";
+                        
+                        baseQuery = $@"
+                            SELECT 
+                                si.ac_code as CustomerAccount,
+                                RTRIM(si.ac_name) as CustomerName,
+                                i.item_group as ItemCode,
+                                RTRIM(ig.group_name) as ItemName,
+                                '' as Variety,
+                                0 as PackSize,
+                                '' as Status,
+                                SUM(ss.qty) as Qty,
+                                SUM(ss.total_wght) as TotalWeight,
+                                SUM(ss.grand_tot) as NetAmount,
+                                0 as AverageRatePerUnit,
+                                0 as AverageRatePerKgs
+                                {taxSummaryFields}
+                            FROM sale_inv si
+                            INNER JOIN sub_sinv ss ON si.inv_no = ss.inv_no AND si.inv_type = ss.inv_type
+                            LEFT JOIN item i ON ss.item_code = i.item_code
+                            LEFT JOIN item_group ig ON i.item_group = ig.group_code
+                            WHERE si.inv_date >= '{fromDateString}' 
+                              AND si.inv_date <= '{toDateString}'
+                              AND i.item_group IS NOT NULL
+                              {customerFilter}
+                              {itemFilter}
+                            GROUP BY si.ac_code, si.ac_name, i.item_group, ig.group_name
+                            ORDER BY si.ac_code, si.ac_name, i.item_group";
+                    }
+                    else
+                    {
+                        baseQuery = $@"
+                            SELECT 
+                                si.ac_code as CustomerAccount,
+                                RTRIM(si.ac_name) as CustomerName,
+                                RTRIM(ss.item_code) as ItemCode,
+                                RTRIM(ss.item_name) as ItemName,
+                                RTRIM(ss.variety) as Variety,
+                                ss.packing as PackSize,
+                                RTRIM(ss.status) as Status,
+                                SUM(ss.qty) as Qty,
+                                SUM(ss.total_wght) as TotalWeight,
+                                SUM(ss.grand_tot) as NetAmount,
+                                CASE 
+                                    WHEN SUM(ss.qty) > 0 
+                                    THEN SUM(ss.grand_tot) / SUM(ss.qty)
+                                    ELSE 0 
+                                END as AverageRatePerUnit,
+                                CASE 
+                                    WHEN SUM(ss.total_wght) > 0 
+                                    THEN SUM(ss.grand_tot) / SUM(ss.total_wght)
+                                    ELSE 0 
+                                END as AverageRatePerKgs
+                                {summaryTaxFields}
+                            FROM sale_inv si
+                            INNER JOIN sub_sinv ss ON si.inv_no = ss.inv_no AND si.inv_type = ss.inv_type
+                            LEFT JOIN item i ON ss.item_code = i.item_code
+                            WHERE si.inv_date >= '{fromDateString}' 
+                              AND si.inv_date <= '{toDateString}'
+                              {customerFilter}
+                              {itemFilter}
+                            GROUP BY si.ac_code, si.ac_name, ss.item_code, ss.item_name, ss.variety, ss.packing, ss.status
+                            ORDER BY si.ac_code, si.ac_name, ss.item_code";
+                    }
+                }
+                else // Invoice Wise
+                {
+                    // Invoice Wise Mode: Group by invoice
+                    baseQuery = $@"
+                        SELECT 
+                            si.inv_no as InvoiceNo,
+                            si.inv_date as Date,
+                            RTRIM(si.inv_type) as InvoiceType,
+                            si.ac_code as CustomerAccount,
+                            RTRIM(si.ac_name) as CustomerName,
+                            RTRIM(ss.item_code) as ItemCode,
+                            RTRIM(ss.item_name) as ItemName,
+                            RTRIM(ss.variety) as Variety,
+                            ss.packing as PackSize,
+                            RTRIM(ss.status) as Status,
+                            ss.qty as Qty,
+                            ss.total_wght as TotalWeight,
+                            ss.rate as Rate,
+                            RTRIM(ss.as_per) as AsPer,
+                            ss.grand_tot as NetAmount
+                            {taxFields}
+                        FROM sale_inv si
+                        INNER JOIN sub_sinv ss ON si.inv_no = ss.inv_no AND si.inv_type = ss.inv_type
+                        LEFT JOIN item i ON ss.item_code = i.item_code
+                        WHERE si.inv_date >= '{fromDateString}' 
+                          AND si.inv_date <= '{toDateString}'
+                          {customerFilter}
+                          {itemFilter}
+                        ORDER BY si.inv_no, si.inv_date, ss.item_code";
+                }
+
+                var results = await _dataAccessService.ExecuteQueryAsync(user, baseQuery, commandTimeout: 120);
+                
+                var ledgerItems = new List<CustomerSalesLedgerItem>();
+                decimal totalQty = 0;
+                decimal totalWeight = 0;
+                decimal totalAmount = 0;
+                decimal totalTaxAmount = 0;
+                decimal totalCommission = 0;
+
+                string currentCustomerAccount = "";
+                string currentInvoiceNo = "";
+                string currentCustomerName = "";
+                decimal customerQty = 0;
+                decimal customerWeight = 0;
+                decimal customerAmount = 0;
+                decimal customerTaxAmount = 0;
+                decimal customerCommission = 0;
+                decimal invoiceQty = 0;
+                decimal invoiceWeight = 0;
+                decimal invoiceAmount = 0;
+                decimal invoiceTaxAmount = 0;
+                decimal invoiceCommission = 0;
+
+                foreach (var row in results)
+                {
+                    var rowCustomerAccount = row.ContainsKey("CustomerAccount") ? row["CustomerAccount"]?.ToString()?.Trim() ?? "" : "";
+                    var rowCustomerName = row.ContainsKey("CustomerName") ? row["CustomerName"]?.ToString()?.Trim() ?? "" : "";
+                    var invoiceNo = row.ContainsKey("InvoiceNo") ? row["InvoiceNo"]?.ToString()?.Trim() ?? "" : "";
+                    var date = row.ContainsKey("Date") && DateTime.TryParse(row["Date"]?.ToString(), out var d) ? d : (DateTime?)null;
+                    var invoiceType = row.ContainsKey("InvoiceType") ? row["InvoiceType"]?.ToString()?.Trim() ?? "" : "";
+                    var rowItemCode = row.ContainsKey("ItemCode") ? row["ItemCode"]?.ToString()?.Trim() ?? "" : "";
+                    var rowItemName = row.ContainsKey("ItemName") ? row["ItemName"]?.ToString()?.Trim() ?? "" : "";
+                    var rowVariety = row.ContainsKey("Variety") ? row["Variety"]?.ToString()?.Trim() ?? "" : "";
+                    var rowPackSize = row.ContainsKey("PackSize") && decimal.TryParse(row["PackSize"]?.ToString(), out var ps) ? ps : 0;
+                    var rowStatus = row.ContainsKey("Status") ? row["Status"]?.ToString()?.Trim() ?? "" : "";
+                    var qty = row.ContainsKey("Qty") && decimal.TryParse(row["Qty"]?.ToString(), out var q) ? q : 0;
+                    var weight = row.ContainsKey("TotalWeight") && decimal.TryParse(row["TotalWeight"]?.ToString(), out var w) ? w : 0;
+                    var rate = row.ContainsKey("Rate") && decimal.TryParse(row["Rate"]?.ToString(), out var r) ? r : 0;
+                    var asPer = row.ContainsKey("AsPer") ? row["AsPer"]?.ToString()?.Trim() ?? "" : "";
+                    var netAmount = row.ContainsKey("NetAmount") && decimal.TryParse(row["NetAmount"]?.ToString(), out var na) ? na : 0;
+                    var taxRate = row.ContainsKey("TaxRate") && decimal.TryParse(row["TaxRate"]?.ToString(), out var tr) ? tr : 0;
+                    var taxAmount = row.ContainsKey("TaxAmount") && decimal.TryParse(row["TaxAmount"]?.ToString(), out var ta) ? ta : 0;
+                    var commissionRate = row.ContainsKey("CommissionRate") && decimal.TryParse(row["CommissionRate"]?.ToString(), out var cr) ? cr : 0;
+                    var commission = row.ContainsKey("Commission") && decimal.TryParse(row["Commission"]?.ToString(), out var c) ? c : 0;
+                    
+                    // For Summary mode, get average rates
+                    decimal rowAverageRatePerUnit = 0;
+                    decimal rowAverageRatePerKgs = 0;
+                    if (row.ContainsKey("AverageRatePerUnit") && decimal.TryParse(row["AverageRatePerUnit"]?.ToString(), out var avgRateUnit))
+                    {
+                        rowAverageRatePerUnit = avgRateUnit;
+                    }
+                    if (row.ContainsKey("AverageRatePerKgs") && decimal.TryParse(row["AverageRatePerKgs"]?.ToString(), out var avgRateKgs))
+                    {
+                        rowAverageRatePerKgs = avgRateKgs;
+                    }
+                    
+                    // For Summary mode, use average rate if rate is not provided
+                    if (reportType == "Summary" && rate == 0 && rowAverageRatePerUnit > 0)
+                    {
+                        rate = rowAverageRatePerUnit;
+                    }
+
+                    // Handle customer grouping for Detail and Summary modes
+                    if ((reportType == "Detail" || reportType == "Summary") && !string.IsNullOrEmpty(currentCustomerAccount) && currentCustomerAccount != rowCustomerAccount)
+                    {
+                        // Add customer total row
+                        ledgerItems.Add(new CustomerSalesLedgerItem
+                        {
+                            CustomerAccount = currentCustomerAccount,
+                            CustomerName = currentCustomerName,
+                            ItemName = "Total",
+                            Qty = customerQty,
+                            TotalWeight = customerWeight,
+                            NetAmount = customerAmount,
+                            TaxAmount = customerTaxAmount,
+                            Commission = customerCommission,
+                            IsCustomerTotal = true
+                        });
+
+                        // Reset customer totals
+                        customerQty = 0;
+                        customerWeight = 0;
+                        customerAmount = 0;
+                        customerTaxAmount = 0;
+                        customerCommission = 0;
+                    }
+
+                    // Handle invoice grouping for Invoice Wise mode
+                    if (reportType == "Invoice Wise" && !string.IsNullOrEmpty(currentInvoiceNo) && currentInvoiceNo != invoiceNo)
+                    {
+                        // Add invoice total row
+                        ledgerItems.Add(new CustomerSalesLedgerItem
+                        {
+                            InvoiceNo = "",
+                            Date = null,
+                            ItemName = "Total",
+                            Qty = invoiceQty,
+                            TotalWeight = invoiceWeight,
+                            NetAmount = invoiceAmount,
+                            TaxAmount = invoiceTaxAmount,
+                            Commission = invoiceCommission,
+                            IsInvoiceTotal = true
+                        });
+
+                        // Reset invoice totals
+                        invoiceQty = 0;
+                        invoiceWeight = 0;
+                        invoiceAmount = 0;
+                        invoiceTaxAmount = 0;
+                        invoiceCommission = 0;
+                    }
+
+                    // Add item row
+                    ledgerItems.Add(new CustomerSalesLedgerItem
+                    {
+                        InvoiceNo = invoiceNo,
+                        Date = date,
+                        InvoiceType = invoiceType,
+                        CustomerAccount = rowCustomerAccount,
+                        CustomerName = rowCustomerName,
+                        ItemCode = rowItemCode,
+                        ItemName = rowItemName,
+                        Variety = rowVariety,
+                        PackSize = rowPackSize,
+                        Status = rowStatus,
+                        Qty = qty,
+                        TotalWeight = weight,
+                        Rate = rate,
+                        AsPer = asPer,
+                        NetAmount = netAmount,
+                        AverageRatePerUnit = rowAverageRatePerUnit,
+                        AverageRatePerKgs = rowAverageRatePerKgs,
+                        TaxRate = taxRate,
+                        TaxAmount = taxAmount,
+                        CommissionRate = commissionRate,
+                        Commission = commission
+                    });
+
+                    // Accumulate totals
+                    totalQty += qty;
+                    totalWeight += weight;
+                    totalAmount += netAmount;
+                    totalTaxAmount += taxAmount;
+                    totalCommission += commission;
+
+                    // Accumulate customer totals
+                    customerQty += qty;
+                    customerWeight += weight;
+                    customerAmount += netAmount;
+                    customerTaxAmount += taxAmount;
+                    customerCommission += commission;
+
+                    // Accumulate invoice totals
+                    invoiceQty += qty;
+                    invoiceWeight += weight;
+                    invoiceAmount += netAmount;
+                    invoiceTaxAmount += taxAmount;
+                    invoiceCommission += commission;
+
+                    currentCustomerAccount = rowCustomerAccount;
+                    currentCustomerName = rowCustomerName;
+                    currentInvoiceNo = invoiceNo;
+                }
+
+                // Add final customer total if needed
+                if ((reportType == "Detail" || reportType == "Summary") && !string.IsNullOrEmpty(currentCustomerAccount) && customerQty > 0)
+                {
+                    ledgerItems.Add(new CustomerSalesLedgerItem
+                    {
+                        CustomerAccount = currentCustomerAccount,
+                        CustomerName = currentCustomerName,
+                        ItemName = "Total",
+                        Qty = customerQty,
+                        TotalWeight = customerWeight,
+                        NetAmount = customerAmount,
+                        TaxAmount = customerTaxAmount,
+                        Commission = customerCommission,
+                        IsCustomerTotal = true
+                    });
+                }
+
+                // Add final invoice total if needed
+                if (reportType == "Invoice Wise" && !string.IsNullOrEmpty(currentInvoiceNo) && invoiceQty > 0)
+                {
+                    ledgerItems.Add(new CustomerSalesLedgerItem
+                    {
+                        InvoiceNo = "",
+                        Date = null,
+                        ItemName = "Total",
+                        Qty = invoiceQty,
+                        TotalWeight = invoiceWeight,
+                        NetAmount = invoiceAmount,
+                        TaxAmount = invoiceTaxAmount,
+                        Commission = invoiceCommission,
+                        IsInvoiceTotal = true
+                    });
+                }
+
+                // Calculate average rates for Summary mode
+                decimal averageRatePerUnit = totalQty > 0 ? totalAmount / totalQty : 0;
+                decimal averageRatePerKgs = totalWeight > 0 ? totalAmount / totalWeight : 0;
+
+                stopwatch.Stop();
+
+                return Ok(new CustomerSalesLedgerResponse
+                {
+                    Success = true,
+                    Message = "Customer Sales Ledger retrieved successfully",
+                    Data = ledgerItems,
+                    FromDate = fromDate,
+                    ToDate = toDate,
+                    CustomerAccount = customerAccount?.Trim() ?? "",
+                    CustomerName = customerName?.Trim() ?? "",
+                    ReportType = reportType,
+                    TaxReport = taxReport,
+                    TaxReportSummary = taxReportSummary,
+                    ItemCode = itemCode?.Trim() ?? "",
+                    ItemName = itemName?.Trim() ?? "",
+                    Variety = variety?.Trim() ?? "",
+                    PackSize = packSize ?? 0,
+                    Status = status?.Trim() ?? "",
+                    TotalQty = totalQty,
+                    TotalWeight = totalWeight,
+                    TotalAmount = totalAmount,
+                    TotalTaxAmount = totalTaxAmount,
+                    TotalCommission = totalCommission,
+                    AverageRatePerUnit = averageRatePerUnit,
+                    AverageRatePerKgs = averageRatePerKgs
+                });
+            }
+            catch (Exception ex)
+            {
+                stopwatch.Stop();
+                _logger.LogError(ex, "Error getting customer sales ledger");
+                return StatusCode(500, new CustomerSalesLedgerResponse
+                {
+                    Success = false,
+                    Message = $"Internal server error: {ex.Message}"
+                });
+            }
+        }
+
         // Item Purchase Register Report
         [HttpGet("item-purchase-register")]
         public async Task<ActionResult<ItemPurchaseRegisterResponse>> GetItemPurchaseRegister(

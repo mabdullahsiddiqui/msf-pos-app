@@ -1,0 +1,848 @@
+@page "/reports/customer-sales-ledger"
+@using pos_app.Client.Services
+@using pos_app.Client.Models
+@using pos_app.Client.Components.Shared
+@using Microsoft.JSInterop
+@inject DataService DataService
+@inject SessionService SessionService
+@inject IJSRuntime JSRuntime
+
+<PageTitle>Customer Sales Ledger Report - POS System</PageTitle>
+
+<style>
+    .ledger-table td {
+        vertical-align: top;
+    }
+    
+    .ledger-table .text-end {
+        text-align: right;
+    }
+    
+    /* Ensure header text is black */
+    .ledger-table thead th {
+        color: #000 !important;
+    }
+
+    .subtotal-row {
+        background-color: #e7d2ff !important;
+        font-weight: 600;
+    }
+
+    .customer-total-row {
+        background-color: #d4a5ff !important;
+        font-weight: 700;
+    }
+
+    .invoice-total-row {
+        background-color: #e7d2ff !important;
+        font-weight: 600;
+    }
+
+    /* Hide FilterCard header when title is empty and style the body */
+    .filter-card .filter-card-header:has(span:empty) {
+        display: none;
+    }
+
+    .filter-card .filter-card-header:has(span:empty) + .filter-card-body {
+        border-top: 1px solid #dee2e6;
+        border-radius: 0.375rem;
+    }
+
+</style>
+
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+
+            <!-- All Customers Section -->
+            <FilterCard Title="" IconClass="">
+                <div class="row mb-3">
+                    <div class="col-12">
+                        <div class="form-check mb-3">
+                            <input class="form-check-input" type="checkbox" id="allCustomers" @bind="allCustomers" @bind:after="OnAllCustomersChanged" />
+                            <label class="form-check-label fw-bold" for="allCustomers">
+                                All Customers
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="row mb-3">
+                    <SearchableAccountInput Label="Customer A/C:" Id="customerAccount" 
+                                           @bind-Value="customerAccount" 
+                                           Placeholder="0-00-00-0000"
+                                           IsDisabled="@allCustomers"
+                                           ColumnClass="col-12 col-md-4" />
+                    <DateInput Label="From Date:" Id="fromDate" @bind-Value="fromDate" MinDate="@minDate" ColumnClass="col-12 col-md-4" />
+                    <DateInput Label="Upto Date:" Id="toDate" @bind-Value="toDate" ColumnClass="col-12 col-md-4" />
+                </div>
+
+                <div class="row mb-3">
+                    <div class="col-12">
+                        <label class="form-label">Report Type:</label>
+                        <div>
+                            @if (!allCustomers)
+                            {
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input" 
+                                           type="radio" 
+                                           name="reportType" 
+                                           id="reportType_Detail" 
+                                           value="Detail" 
+                                           checked="@(reportType == "Detail")" 
+                                           @onchange="@(() => reportType = "Detail")" />
+                                    <label class="form-check-label" for="reportType_Detail">
+                                        Detail
+                                    </label>
+                                </div>
+                            }
+                            <div class="form-check form-check-inline">
+                                <input class="form-check-input" 
+                                       type="radio" 
+                                       name="reportType" 
+                                       id="reportType_Summary" 
+                                       value="Summary" 
+                                       checked="@(reportType == "Summary")" 
+                                       @onchange="@(() => reportType = "Summary")" />
+                                <label class="form-check-label" for="reportType_Summary">
+                                    Summary
+                                </label>
+                            </div>
+                            @if (!allCustomers)
+                            {
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input" 
+                                           type="radio" 
+                                           name="reportType" 
+                                           id="reportType_InvoiceWise" 
+                                           value="Invoice Wise" 
+                                           checked="@(reportType == "Invoice Wise")" 
+                                           @onchange="@(() => reportType = "Invoice Wise")" />
+                                    <label class="form-check-label" for="reportType_InvoiceWise">
+                                        Invoice Wise
+                                    </label>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                </div>
+
+                <div class="row mb-3">
+                    <div class="col-12 col-md-3">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="taxReport" @bind="taxReport" @bind:after="OnTaxReportChanged" />
+                            <label class="form-check-label" for="taxReport">
+                                Tax Report
+                            </label>
+                        </div>
+                    </div>
+                    <div class="col-12 col-md-3">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="taxReportSummary" @bind="taxReportSummary" @bind:after="OnTaxReportSummaryChanged" />
+                            <label class="form-check-label" for="taxReportSummary">
+                                Tax Report Summary
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </FilterCard>
+
+            <!-- Report For Single Item Section -->
+            <div class="mt-3">
+                <FilterCard Title="" IconClass="">
+                <div class="row mb-3">
+                    <div class="col-12">
+                        <div class="form-check mb-3">
+                            <input class="form-check-input" type="checkbox" id="reportForSingleItem" @bind="reportForSingleItem" />
+                            <label class="form-check-label fw-bold" for="reportForSingleItem">
+                                Report For Single Item
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                @if (reportForSingleItem)
+                {
+                    <div class="row mb-3">
+                        <SearchableItemInput Label="Item Code:" Id="itemCode" @bind-Value="selectedItem" ColumnClass="col-12 col-md-6" />
+                        <div class="col-12 col-md-6">
+                            <label class="form-label">Item Name:</label>
+                            <input type="text" class="form-control" value="@(selectedItem?.ItemName ?? "")" disabled />
+                        </div>
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-12 col-md-4">
+                            <label class="form-label">Variety:</label>
+                            <input type="text" class="form-control" value="@(selectedItem?.Variety ?? "")" disabled />
+                        </div>
+                        <div class="col-12 col-md-4">
+                            <label class="form-label">Pack Size:</label>
+                            <input type="text" class="form-control" value="@(selectedItem?.PackSize > 0 ? selectedItem.PackSize.ToString("N2") : "")" disabled />
+                        </div>
+                        <div class="col-12 col-md-4">
+                            <label class="form-label">Status:</label>
+                            <input type="text" class="form-control" value="@(selectedItem?.PackStat ?? "")" disabled />
+                        </div>
+                    </div>
+                }
+                </FilterCard>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="row mt-3">
+                <div class="col-12 d-flex justify-content-end gap-2">
+                        <ActionButton Text="Preview" IconClass="fas fa-search" OnClick="LoadCustomerSalesLedger" IsLoading="@isLoading" IsDisabled="@isLoading" />
+                </div>
+            </div>
+
+            <!-- Loading Indicator -->
+            @if (isLoading)
+            {
+                <LoadingSpinner Message="Generating customer sales ledger report..." />
+            }
+
+            <!-- Error Message -->
+            <ErrorAlert Message="@errorMessage" />
+
+            <!-- Report Data -->
+            @if (ledgerData != null && ledgerData.Success)
+            {
+                <ReportTable FilterableColumns="@(new List<int> { 0, 1 })">
+                    <HeaderContent>
+                        <ReportTitleHeader Title="Customer Sales Ledger" IconClass="fas fa-journal-whills">
+                            <DateRangeContent>
+                                From: @ledgerData.FromDate.ToString("dd/MM/yyyy") 
+                                To Date: @ledgerData.ToDate.ToString("dd/MM/yyyy")
+                                @if (!string.IsNullOrEmpty(ledgerData.CustomerName))
+                                {
+                                    <text><br />Customer: @ledgerData.CustomerName</text>
+                                }
+                                @if (!string.IsNullOrEmpty(ledgerData.ItemName))
+                                {
+                                    <text><br />Item: @ledgerData.ItemName</text>
+                                }
+                            </DateRangeContent>
+                        </ReportTitleHeader>
+                    </HeaderContent>
+                    
+                    <SummaryCards>
+                        <SummaryCard Title="Total Qty" Value="@CurrencyHelper.FormatNumber(ledgerData.TotalQty)" BgColor="info" ColumnClass="col-md-3" />
+                        <SummaryCard Title="Total Weight" Value="@CurrencyHelper.FormatNumber(ledgerData.TotalWeight)" BgColor="warning" ColumnClass="col-md-3" />
+                        <SummaryCard Title="Total Amount" Value="@CurrencyHelper.FormatNumber(ledgerData.TotalAmount)" BgColor="success" ColumnClass="col-md-3" />
+                        @if (taxReport || taxReportSummary)
+                        {
+                            <SummaryCard Title="Total Tax" Value="@CurrencyHelper.FormatNumber(ledgerData.TotalTaxAmount)" BgColor="primary" ColumnClass="col-md-3" />
+                        }
+                        else
+                        {
+                            <SummaryCard Title="Report Type" Value="@ledgerData.ReportType" BgColor="primary" ColumnClass="col-md-3" />
+                        }
+                    </SummaryCards>
+
+                    <BodyContent>
+                        <div class="table-responsive">
+                            <table class="table table-bordered ledger-table" id="customerSalesLedgerTable">
+                                <thead>
+                                    <tr>
+                                        @if (reportType == "Detail" || reportType == "Invoice Wise")
+                                        {
+                                            <th>Invoice</th>
+                                            <th>Date</th>
+                                        }
+                                        @if (reportType == "Detail")
+                                        {
+                                            <th>Customer</th>
+                                        }
+                                        @if (reportType == "Summary")
+                                        {
+                                            <th>Item code</th>
+                                        }
+                                        <th>Item Name</th>
+                                        @if ((reportType == "Summary" && !taxReportSummary) || reportType == "Detail" || reportType == "Invoice Wise")
+                                        {
+                                            <th>Pack Size</th>
+                                        }
+                                        <th class="text-end">Qty</th>
+                                        <th class="text-end">Weight</th>
+                                        @if (reportType == "Summary")
+                                        {
+                                            @if (!taxReport && !taxReportSummary)
+                                            {
+                                                <th class="text-end">Amount</th>
+                                                <th class="text-end">Average Rate</th>
+                                                <th class="text-end">Average Kgs</th>
+                                            }
+                                        }
+                                        else if (reportType == "Detail" || reportType == "Invoice Wise")
+                                        {
+                                            <th class="text-end">Rate.</th>
+                                            <th>As per</th>
+                                            <th class="text-end">Net Amt.</th>
+                                        }
+                                        @if (taxReport || taxReportSummary)
+                                        {
+                                            @if (taxReport && reportType == "Summary")
+                                            {
+                                                <th class="text-end">Tax Amount</th>
+                                                <th class="text-end">Tax Amount</th>
+                                            }
+                                            else if (taxReportSummary)
+                                            {
+                                                <th class="text-end">Com.Rate</th>
+                                                <th class="text-end">Commission</th>
+                                                <th class="text-end">Tax Amount</th>
+                                            }
+                                            else
+                                            {
+                                                <th class="text-end">Tax Amount</th>
+                                            }
+                                        }
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @if (ledgerData.Data.Any())
+                                    {
+                                        string currentCustomer = "";
+                                        @foreach (var item in ledgerData.Data)
+                                        {
+                                            // Show customer header for Summary mode (before first item of each customer)
+                                            @if (reportType == "Summary" && !string.IsNullOrEmpty(item.CustomerName) && item.CustomerName != currentCustomer && !item.IsCustomerTotal)
+                                            {
+                                                currentCustomer = item.CustomerName;
+                                                int colSpan = taxReportSummary ? 4 : 5; // Item code, Item Name, (Pack Size if not taxReportSummary), Qty, Weight
+                                                if (!taxReport && !taxReportSummary)
+                                                {
+                                                    colSpan += 3; // Amount, Average Rate, Average Kgs
+                                                }
+                                                if (taxReport && reportType == "Summary")
+                                                {
+                                                    colSpan += 2; // Tax Amount (rate), Tax Amount
+                                                }
+                                                else if (taxReportSummary)
+                                                {
+                                                    colSpan += 3; // Com.Rate, Commission, Tax Amount
+                                                }
+                                                else if (taxReport)
+                                                {
+                                                    colSpan += 1; // Tax Amount
+                                                }
+                                                <tr class="customer-header-row">
+                                                    <td colspan="@colSpan" class="fw-bold bg-light">
+                                                        Customer Name: @item.CustomerName
+                                                    </td>
+                                                </tr>
+                                            }
+                                            
+                                            // Reset current customer when we hit a total row
+                                            @if (reportType == "Summary" && item.IsCustomerTotal)
+                                            {
+                                                currentCustomer = "";
+                                            }
+                                            
+                                            <tr class="@(item.IsCustomerTotal ? "customer-total-row" : item.IsInvoiceTotal ? "invoice-total-row" : item.IsSubTotal ? "subtotal-row" : "")">
+                                                @if (reportType == "Detail" || reportType == "Invoice Wise")
+                                                {
+                                                    <td>@item.InvoiceNo</td>
+                                                    <td>
+                                                        @if (item.Date.HasValue)
+                                                        {
+                                                            @item.Date.Value.ToString("dd/MM/yyyy")
+                                                        }
+                                                    </td>
+                                                }
+                                                @if (reportType == "Detail")
+                                                {
+                                                    <td>
+                                                        @if (item.IsCustomerTotal)
+                                                        {
+                                                            <strong>Total</strong>
+                                                        }
+                                                        else
+                                                        {
+                                                            @item.CustomerName
+                                                        }
+                                                    </td>
+                                                }
+                                                @if (reportType == "Summary")
+                                                {
+                                                    <td>
+                                                        @if (!item.IsCustomerTotal)
+                                                        {
+                                                            @item.ItemCode
+                                                        }
+                                                    </td>
+                                                }
+                                                <td>
+                                                    @if (item.IsCustomerTotal || item.IsInvoiceTotal || item.IsSubTotal)
+                                                    {
+                                                        <strong>@item.ItemName</strong>
+                                                    }
+                                                    else
+                                                    {
+                                                        @item.ItemName
+                                                        @if (!string.IsNullOrEmpty(item.Variety))
+                                                        {
+                                                            <br /><small class="text-muted">@item.Variety</small>
+                                                        }
+                                                    }
+                                                </td>
+                                                @if ((reportType == "Summary" && !taxReportSummary) || reportType == "Detail" || reportType == "Invoice Wise")
+                                                {
+                                                    <td>
+                                                        @if (!item.IsCustomerTotal && !item.IsInvoiceTotal && !item.IsSubTotal)
+                                                        {
+                                                            @CurrencyHelper.FormatNumber(item.PackSize)
+                                                        }
+                                                    </td>
+                                                }
+                                                <td class="text-end">
+                                                    @if (item.IsCustomerTotal || item.IsInvoiceTotal || item.IsSubTotal)
+                                                    {
+                                                        <strong>@CurrencyHelper.FormatNumber(item.Qty)</strong>
+                                                    }
+                                                    else
+                                                    {
+                                                        @if (item.Qty % 1 == 0)
+                                                        {
+                                                            @((int)item.Qty)
+                                                        }
+                                                        else
+                                                        {
+                                                            @CurrencyHelper.FormatNumber(item.Qty)
+                                                        }
+                                                    }
+                                                </td>
+                                                <td class="text-end">
+                                                    @if (item.IsCustomerTotal || item.IsInvoiceTotal || item.IsSubTotal)
+                                                    {
+                                                        <strong>@CurrencyHelper.FormatNumber(item.TotalWeight)</strong>
+                                                    }
+                                                    else
+                                                    {
+                                                        @CurrencyHelper.FormatNumber(item.TotalWeight)
+                                                    }
+                                                </td>
+                                                @if (reportType == "Summary")
+                                                {
+                                                    @if (!taxReport && !taxReportSummary)
+                                                    {
+                                                        <td class="text-end">
+                                                            @if (item.IsCustomerTotal)
+                                                            {
+                                                                <strong>@CurrencyHelper.FormatNumber(item.NetAmount)</strong>
+                                                            }
+                                                            else
+                                                            {
+                                                                @CurrencyHelper.FormatNumber(item.NetAmount)
+                                                            }
+                                                        </td>
+                                                        <td class="text-end">
+                                                            @if (!item.IsCustomerTotal)
+                                                            {
+                                                                @CurrencyHelper.FormatNumber(item.AverageRatePerUnit)
+                                                            }
+                                                        </td>
+                                                        <td class="text-end">
+                                                            @if (!item.IsCustomerTotal)
+                                                            {
+                                                                @CurrencyHelper.FormatNumber(item.AverageRatePerKgs)
+                                                            }
+                                                        </td>
+                                                    }
+                                                }
+                                                else if (reportType == "Detail" || reportType == "Invoice Wise")
+                                                {
+                                                    <td class="text-end">
+                                                        @if (!item.IsCustomerTotal && !item.IsInvoiceTotal && !item.IsSubTotal)
+                                                        {
+                                                            @CurrencyHelper.FormatNumber(item.Rate)
+                                                        }
+                                                    </td>
+                                                    <td>@item.AsPer</td>
+                                                    <td class="text-end">
+                                                        @if (item.IsCustomerTotal || item.IsInvoiceTotal || item.IsSubTotal)
+                                                        {
+                                                            <strong>@CurrencyHelper.FormatNumber(item.NetAmount)</strong>
+                                                        }
+                                                        else
+                                                        {
+                                                            @CurrencyHelper.FormatNumber(item.NetAmount)
+                                                        }
+                                                    </td>
+                                                }
+                                                @if (taxReport || taxReportSummary)
+                                                {
+                                                    @if (taxReport && reportType == "Summary")
+                                                    {
+                                                        <td class="text-end">
+                                                            @if (!item.IsCustomerTotal)
+                                                            {
+                                                                @CurrencyHelper.FormatNumber(item.TaxRate, "N3")
+                                                            }
+                                                        </td>
+                                                        <td class="text-end">
+                                                            @if (item.IsCustomerTotal)
+                                                            {
+                                                                <strong>@CurrencyHelper.FormatNumber(item.TaxAmount)</strong>
+                                                            }
+                                                            else
+                                                            {
+                                                                @CurrencyHelper.FormatNumber(item.TaxAmount)
+                                                            }
+                                                        </td>
+                                                    }
+                                                    else if (taxReportSummary)
+                                                    {
+                                                        <td class="text-end">
+                                                            @if (!item.IsCustomerTotal && !item.IsInvoiceTotal && !item.IsSubTotal)
+                                                            {
+                                                                @CurrencyHelper.FormatNumber(item.CommissionRate, "N2")
+                                                            }
+                                                        </td>
+                                                        <td class="text-end">
+                                                            @if (item.IsCustomerTotal || item.IsInvoiceTotal || item.IsSubTotal)
+                                                            {
+                                                                <strong>@CurrencyHelper.FormatNumber(item.Commission)</strong>
+                                                            }
+                                                            else
+                                                            {
+                                                                @CurrencyHelper.FormatNumber(item.Commission)
+                                                            }
+                                                        </td>
+                                                        <td class="text-end">
+                                                            @if (item.IsCustomerTotal || item.IsInvoiceTotal || item.IsSubTotal)
+                                                            {
+                                                                <strong>@CurrencyHelper.FormatNumber(item.TaxAmount)</strong>
+                                                            }
+                                                            else
+                                                            {
+                                                                @CurrencyHelper.FormatNumber(item.TaxAmount)
+                                                            }
+                                                        </td>
+                                                    }
+                                                    else
+                                                    {
+                                                        <td class="text-end">
+                                                            @if (item.IsCustomerTotal || item.IsInvoiceTotal || item.IsSubTotal)
+                                                            {
+                                                                <strong>@CurrencyHelper.FormatNumber(item.TaxAmount)</strong>
+                                                            }
+                                                            else
+                                                            {
+                                                                @CurrencyHelper.FormatNumber(item.TaxAmount)
+                                                            }
+                                                        </td>
+                                                    }
+                                                }
+                                            </tr>
+                                        }
+                                    }
+                                    else
+                                    {
+                                        <tr>
+                                            <td colspan="@GetColumnCount()" class="text-center text-muted">No sales transactions found for the selected criteria.</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    </BodyContent>
+
+                    <FooterContent>
+                        <div class="row">
+                            <div class="col-md-3">
+                                <strong>Total Qty: @CurrencyHelper.FormatNumber(ledgerData.TotalQty)</strong>
+                            </div>
+                            <div class="col-md-3">
+                                <strong>Total Weight: @CurrencyHelper.FormatNumber(ledgerData.TotalWeight)</strong>
+                            </div>
+                            <div class="col-md-3">
+                                <strong>Total Amount: @CurrencyHelper.FormatNumber(ledgerData.TotalAmount)</strong>
+                            </div>
+                            @if (taxReport || taxReportSummary)
+                            {
+                                <div class="col-md-3">
+                                    <strong>Total Tax: @CurrencyHelper.FormatNumber(ledgerData.TotalTaxAmount)</strong>
+                                </div>
+                            }
+                        </div>
+                        @if (reportType == "Summary" && ledgerData.AverageRatePerUnit > 0)
+                        {
+                            <div class="row mt-2">
+                                <div class="col-md-6">
+                                    <strong>Average Rate Per Unit: @CurrencyHelper.FormatNumber(ledgerData.AverageRatePerUnit)</strong>
+                                </div>
+                                <div class="col-md-6">
+                                    <strong>Average Rate Per Kgs: @CurrencyHelper.FormatNumber(ledgerData.AverageRatePerKgs)</strong>
+                                </div>
+                            </div>
+                        }
+                    </FooterContent>
+                </ReportTable>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    private DateTime fromDate;
+    private DateTime toDate = DateTime.Now;
+    private bool allCustomers = true;
+    private string customerAccount = "";
+    private string reportType = "Summary";
+    private bool taxReport = false;
+    private bool taxReportSummary = false;
+    private bool reportForSingleItem = false;
+    private ClientItem? selectedItem = null;
+    private CustomerSalesLedgerResponse? ledgerData;
+    private bool isLoading = false;
+    private string errorMessage = string.Empty;
+    private DateTime? minDate;
+    
+    protected override async Task OnInitializedAsync()
+    {
+        // Get minimum date from session
+        minDate = await SessionService.GetMinDateAsync();
+        
+        // Set fromDate to session start_date if available, otherwise use current month start
+        if (minDate.HasValue)
+        {
+            fromDate = minDate.Value;
+        }
+        else
+        {
+            fromDate = new DateTime(DateTime.Now.Year, DateTime.Now.Month, 1);
+        }
+        
+        toDate = DateTime.Now;
+    }
+
+    private void OnAllCustomersChanged()
+    {
+        if (allCustomers)
+        {
+            // Auto-select Summary when All Customers is checked
+            reportType = "Summary";
+            customerAccount = ""; // Clear customer selection
+        }
+    }
+
+    private void OnTaxReportChanged()
+    {
+        if (taxReport)
+        {
+            // If Tax Report is checked, uncheck Tax Report Summary
+            taxReportSummary = false;
+        }
+    }
+
+    private void OnTaxReportSummaryChanged()
+    {
+        if (taxReportSummary)
+        {
+            // If Tax Report Summary is checked, uncheck Tax Report
+            taxReport = false;
+        }
+    }
+
+    private async Task LoadCustomerSalesLedger()
+    {
+        if (fromDate > toDate)
+        {
+            errorMessage = "From Date cannot be greater than To Date.";
+            return;
+        }
+
+        if (reportForSingleItem && selectedItem == null)
+        {
+            errorMessage = "Please select an item for single item report.";
+            return;
+        }
+
+        isLoading = true;
+        errorMessage = string.Empty;
+        ledgerData = null;
+
+        try
+        {
+            string? account = allCustomers ? null : customerAccount;
+            string? itemCode = reportForSingleItem && selectedItem != null ? selectedItem.ItemCode : null;
+            string? itemName = reportForSingleItem && selectedItem != null ? selectedItem.ItemName : null;
+            string? variety = reportForSingleItem && selectedItem != null ? selectedItem.Variety : null;
+            decimal? packSize = reportForSingleItem && selectedItem != null && selectedItem.PackSize > 0 ? selectedItem.PackSize : null;
+            string? status = reportForSingleItem && selectedItem != null ? selectedItem.PackStat : null;
+
+            ledgerData = await DataService.GetCustomerSalesLedgerAsync(
+                fromDate, 
+                toDate, 
+                account, 
+                null, 
+                reportType, 
+                taxReport, 
+                taxReportSummary,
+                itemCode,
+                itemName,
+                variety,
+                packSize,
+                status);
+            
+            if (!ledgerData.Success)
+            {
+                errorMessage = ledgerData.Message;
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"An error occurred while loading the customer sales ledger: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private int GetColumnCount()
+    {
+        int count = 3; // Base columns: Item Name, Qty, Total Weight, Net Amount
+        
+        if (reportType == "Detail" || reportType == "Invoice Wise")
+        {
+            count += 3; // Invoice, Date, Pack Size, Rate, As per
+        }
+        
+        if (reportType == "Detail" || reportType == "Summary")
+        {
+            count += 1; // Customer
+        }
+        
+        if (taxReport || taxReportSummary)
+        {
+            count += 1; // Tax Amount
+            if (taxReportSummary)
+            {
+                count += 2; // Commission Rate, Commission
+            }
+        }
+        
+        return count;
+    }
+
+    private async Task ExportToExcel()
+    {
+        if (ledgerData == null || !ledgerData.Success || !ledgerData.Data.Any())
+            return;
+
+        try
+        {
+            // Create CSV content
+            var csv = new System.Text.StringBuilder();
+            
+            // Header
+            csv.AppendLine("Customer Sales Ledger Report");
+            csv.AppendLine($"From Date: {ledgerData.FromDate:dd/MM/yyyy} To Date: {ledgerData.ToDate:dd/MM/yyyy}");
+            if (!string.IsNullOrEmpty(ledgerData.CustomerName))
+            {
+                csv.AppendLine($"Customer: {ledgerData.CustomerName}");
+            }
+            if (!string.IsNullOrEmpty(ledgerData.ItemName))
+            {
+                csv.AppendLine($"Item: {ledgerData.ItemName}");
+            }
+            csv.AppendLine($"Report Type: {ledgerData.ReportType}");
+            csv.AppendLine();
+            
+            // Column headers
+            var headers = new List<string>();
+            if (reportType == "Detail" || reportType == "Invoice Wise")
+            {
+                headers.Add("Invoice");
+                headers.Add("Date");
+            }
+            if (reportType == "Detail" || reportType == "Summary")
+            {
+                headers.Add("Customer");
+            }
+            headers.Add("Item Name & Description");
+            if (reportType == "Detail" || reportType == "Invoice Wise")
+            {
+                headers.Add("Pack Size");
+            }
+            headers.Add("Qty.");
+            headers.Add("Total Weight");
+            if (reportType == "Detail" || reportType == "Invoice Wise")
+            {
+                headers.Add("Rate.");
+                headers.Add("As per");
+            }
+            headers.Add("Net Amt.");
+            if (taxReport || taxReportSummary)
+            {
+                if (taxReportSummary)
+                {
+                    headers.Add("Com.Rate");
+                    headers.Add("Commission");
+                }
+                headers.Add("Tax Amount");
+            }
+            csv.AppendLine(string.Join(",", headers));
+            
+            // Data rows
+            foreach (var item in ledgerData.Data)
+            {
+                var row = new List<string>();
+                if (reportType == "Detail" || reportType == "Invoice Wise")
+                {
+                    row.Add(item.InvoiceNo);
+                    row.Add(item.Date.HasValue ? item.Date.Value.ToString("dd/MM/yyyy") : "");
+                }
+                if (reportType == "Detail" || reportType == "Summary")
+                {
+                    row.Add(item.CustomerName);
+                }
+                row.Add(item.ItemName + (string.IsNullOrEmpty(item.Variety) ? "" : $" {item.Variety}"));
+                if (reportType == "Detail" || reportType == "Invoice Wise")
+                {
+                    row.Add(item.PackSize.ToString("N2"));
+                }
+                row.Add(item.Qty.ToString("N2"));
+                row.Add(item.TotalWeight.ToString("N2"));
+                if (reportType == "Detail" || reportType == "Invoice Wise")
+                {
+                    row.Add(item.Rate.ToString("N2"));
+                    row.Add(item.AsPer);
+                }
+                row.Add(item.NetAmount.ToString("N2"));
+                if (taxReport || taxReportSummary)
+                {
+                    if (taxReportSummary)
+                    {
+                        row.Add(item.CommissionRate.ToString("N2"));
+                        row.Add(item.Commission.ToString("N2"));
+                    }
+                    row.Add(item.TaxAmount.ToString("N2"));
+                }
+                csv.AppendLine(string.Join(",", row));
+            }
+            
+            // Totals
+            csv.AppendLine();
+            csv.AppendLine($"Total Qty,{ledgerData.TotalQty:N2}");
+            csv.AppendLine($"Total Weight,{ledgerData.TotalWeight:N2}");
+            csv.AppendLine($"Total Amount,{ledgerData.TotalAmount:N2}");
+            if (taxReport || taxReportSummary)
+            {
+                csv.AppendLine($"Total Tax,{ledgerData.TotalTaxAmount:N2}");
+            }
+            
+            // Download file
+            var fileName = $"CustomerSalesLedger_{DateTime.Now:yyyyMMdd_HHmmss}.csv";
+            await JSRuntime.InvokeVoidAsync("downloadFile", fileName, csv.ToString(), "text/csv");
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error exporting to Excel: {ex.Message}";
+            StateHasChanged();
+        }
+    }
+}
+

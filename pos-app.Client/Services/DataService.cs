@@ -912,6 +912,98 @@ namespace pos_app.Client.Services
             }
         }
 
+        // Customer Sales Ledger Report
+        public async Task<CustomerSalesLedgerResponse> GetCustomerSalesLedgerAsync(
+            DateTime fromDate,
+            DateTime toDate,
+            string? customerAccount = null,
+            string? customerName = null,
+            string reportType = "Summary",
+            bool taxReport = false,
+            bool taxReportSummary = false,
+            string? itemCode = null,
+            string? itemName = null,
+            string? variety = null,
+            decimal? packSize = null,
+            string? status = null)
+        {
+            try
+            {
+                var client = await CreateAuthedClientAsync();
+                var url = "api/reports/customer-sales-ledger";
+                var queryParams = new List<string>();
+                
+                queryParams.Add($"fromDate={fromDate:yyyy-MM-dd}");
+                queryParams.Add($"toDate={toDate:yyyy-MM-dd}");
+                queryParams.Add($"reportType={Uri.EscapeDataString(reportType)}");
+                
+                if (!string.IsNullOrEmpty(customerAccount))
+                {
+                    queryParams.Add($"customerAccount={Uri.EscapeDataString(customerAccount)}");
+                }
+                
+                if (!string.IsNullOrEmpty(customerName))
+                {
+                    queryParams.Add($"customerName={Uri.EscapeDataString(customerName)}");
+                }
+                
+                if (taxReport)
+                {
+                    queryParams.Add("taxReport=true");
+                }
+                
+                if (taxReportSummary)
+                {
+                    queryParams.Add("taxReportSummary=true");
+                }
+                
+                if (!string.IsNullOrEmpty(itemCode))
+                {
+                    queryParams.Add($"itemCode={Uri.EscapeDataString(itemCode)}");
+                }
+                
+                if (!string.IsNullOrEmpty(itemName))
+                {
+                    queryParams.Add($"itemName={Uri.EscapeDataString(itemName)}");
+                }
+                
+                if (!string.IsNullOrEmpty(variety))
+                {
+                    queryParams.Add($"variety={Uri.EscapeDataString(variety)}");
+                }
+                
+                if (packSize.HasValue)
+                {
+                    queryParams.Add($"packSize={packSize.Value}");
+                }
+                
+                if (!string.IsNullOrEmpty(status))
+                {
+                    queryParams.Add($"status={Uri.EscapeDataString(status)}");
+                }
+                
+                if (queryParams.Any())
+                {
+                    url += "?" + string.Join("&", queryParams);
+                }
+
+                var response = await client.GetAsync(url);
+                if (response.IsSuccessStatusCode)
+                {
+                    var result = await response.Content.ReadFromJsonAsync<CustomerSalesLedgerResponse>();
+                    return result ?? new CustomerSalesLedgerResponse { Success = false, Message = "Invalid response from server" };
+                }
+
+                var errorContent = await response.Content.ReadAsStringAsync();
+                return new CustomerSalesLedgerResponse { Success = false, Message = $"Failed to fetch customer sales ledger: {response.StatusCode}" };
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching customer sales ledger");
+                return new CustomerSalesLedgerResponse { Success = false, Message = $"Error: {ex.Message}" };
+            }
+        }
+
         // Item Sales Ledger Report
         public async Task<ItemSalesLedgerResponse> GetItemSalesLedgerAsync(
             DateTime fromDate, 

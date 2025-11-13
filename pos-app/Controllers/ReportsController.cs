@@ -3958,6 +3958,200 @@ namespace pos_app.Controllers
             }
         }
 
+        // Broker Sales Report
+        [HttpGet("broker-sales-report")]
+        public async Task<ActionResult<BrokerSalesReportResponse>> GetBrokerSalesReport(
+            [FromQuery] DateTime fromDate, 
+            [FromQuery] DateTime toDate,
+            [FromQuery] string? brokerAccountCode = null)
+        {
+            var stopwatch = Stopwatch.StartNew();
+            try
+            {
+                var userId = GetCurrentUserId();
+                var user = await _authService.GetActiveUserAsync(userId);
+                
+                if (user == null)
+                {
+                    return BadRequest(new BrokerSalesReportResponse
+                    {
+                        Success = false,
+                        Message = "No active database connection found. Please set up your database connection first."
+                    });
+                }
+
+                var fromDateString = fromDate.ToString("yyyy/MM/dd");
+                var toDateString = toDate.ToString("yyyy/MM/dd");
+
+                // Build broker account filter
+                string brokerFilter = "";
+                string brokerName = "All";
+                if (!string.IsNullOrWhiteSpace(brokerAccountCode))
+                {
+                    brokerFilter = $"AND si.ac_code = '{brokerAccountCode.Trim().Replace("'", "''")}'";
+                    // Get broker name from the first result or query separately
+                }
+
+                // Broker Sales Report SQL query - join sale_inv with sub_sinv, ordered by item and packing
+                var brokerSalesReportQuery = $@"
+                    SELECT 
+                        si.inv_no as InvoiceNo,
+                        si.inv_date as Date,
+                        ss.qty as Qty,
+                        ss.total_wght as TotalWeight,
+                        ss.rate as Rate,
+                        RTRIM(ss.as_per) as AsPer,
+                        ss.grand_tot as NetAmount,
+                        RTRIM(si.deliver_to) as DeliverTo,
+                        RTRIM(ss.item_name) as ItemName,
+                        ss.packing as Packing,
+                        RTRIM(si.ac_name) as BrokerName
+                    FROM sale_inv si
+                    INNER JOIN sub_sinv ss ON si.inv_no = ss.inv_no AND si.inv_type = ss.inv_type
+                    WHERE si.inv_date >= '{fromDateString}' 
+                      AND si.inv_date <= '{toDateString}'
+                      {brokerFilter}
+                    ORDER BY ss.item_name, ss.packing, si.inv_date, si.inv_no";
+
+                var results = await _dataAccessService.ExecuteQueryAsync(user, brokerSalesReportQuery, commandTimeout: 120);
+                
+                var brokerSalesReportItems = new List<BrokerSalesReportItem>();
+                decimal grandTotalQty = 0;
+                decimal grandTotalWeight = 0;
+                decimal grandTotalNetAmount = 0;
+
+                // Get broker name from first result if filtered
+                if (!string.IsNullOrWhiteSpace(brokerAccountCode) && results.Any())
+                {
+                    var firstRow = results.First();
+                    if (firstRow.ContainsKey("BrokerName"))
+                    {
+                        brokerName = firstRow["BrokerName"]?.ToString()?.Trim() ?? "All";
+                    }
+                }
+
+                // Group results by item (ItemName + Packing)
+                var itemGroups = results
+                    .GroupBy(row => new
+                    {
+                        ItemName = row.ContainsKey("ItemName") ? row["ItemName"]?.ToString()?.Trim() ?? "" : "",
+                        Packing = row.ContainsKey("Packing") && decimal.TryParse(row["Packing"]?.ToString(), out var p) ? p : 0,
+                        AsPer = row.ContainsKey("AsPer") ? row["AsPer"]?.ToString()?.Trim() ?? "" : ""
+                    })
+                    .OrderBy(g => g.Key.ItemName)
+                    .ThenBy(g => g.Key.Packing)
+                    .ToList();
+
+                foreach (var itemGroup in itemGroups)
+                {
+                    var itemName = itemGroup.Key.ItemName;
+                    var packing = itemGroup.Key.Packing;
+                    var asPer = itemGroup.Key.AsPer;
+
+                    // Format packing to always show 2 decimal places (matching desktop app format)
+                    string packingDisplay = "";
+                    if (asPer == "Mounds" || asPer == "Kgs")
+                    {
+                        packingDisplay = $"{packing:F2} Kgs";
+                    }
+                    else
+                    {
+                        packingDisplay = $"{packing:F2} Unit";
+                    }
+
+                    // Add item header row
+                    brokerSalesReportItems.Add(new BrokerSalesReportItem
+                    {
+                        ItemName = itemName,
+                        Packing = packingDisplay,
+                        IsItemHeader = true,
+                        IsSubTotal = false
+                    });
+
+                    // Process transactions for this item
+                    decimal itemTotalQty = 0;
+                    decimal itemTotalWeight = 0;
+                    decimal itemTotalNetAmount = 0;
+
+                    foreach (var row in itemGroup.OrderBy(r => 
+                        r.ContainsKey("Date") && DateTime.TryParse(r["Date"]?.ToString(), out var d) ? d : DateTime.MinValue)
+                        .ThenBy(r => r.ContainsKey("InvoiceNo") ? r["InvoiceNo"]?.ToString() ?? "" : ""))
+                    {
+                        var invoiceNo = row.ContainsKey("InvoiceNo") ? row["InvoiceNo"]?.ToString()?.Trim() ?? "" : "";
+                        var date = row.ContainsKey("Date") && DateTime.TryParse(row["Date"]?.ToString(), out var d) ? d : (DateTime?)null;
+                        var qty = row.ContainsKey("Qty") && decimal.TryParse(row["Qty"]?.ToString(), out var q) ? q : 0;
+                        var totalWeight = row.ContainsKey("TotalWeight") && decimal.TryParse(row["TotalWeight"]?.ToString(), out var w) ? w : 0;
+                        var rate = row.ContainsKey("Rate") && decimal.TryParse(row["Rate"]?.ToString(), out var r) ? r : 0;
+                        var asPerValue = row.ContainsKey("AsPer") ? row["AsPer"]?.ToString()?.Trim() ?? "" : "";
+                        var netAmount = row.ContainsKey("NetAmount") && decimal.TryParse(row["NetAmount"]?.ToString(), out var na) ? na : 0;
+                        var deliverTo = row.ContainsKey("DeliverTo") ? row["DeliverTo"]?.ToString()?.Trim() ?? "" : "";
+
+                        // Add transaction row
+                        brokerSalesReportItems.Add(new BrokerSalesReportItem
+                        {
+                            InvoiceNo = invoiceNo,
+                            Date = date,
+                            Qty = qty,
+                            TotalWeight = totalWeight,
+                            Rate = rate,
+                            AsPer = asPerValue,
+                            NetAmount = netAmount,
+                            DeliverTo = deliverTo,
+                            ItemName = itemName,
+                            Packing = packingDisplay,
+                            IsItemHeader = false,
+                            IsSubTotal = false
+                        });
+
+                        itemTotalQty += qty;
+                        itemTotalWeight += totalWeight;
+                        itemTotalNetAmount += netAmount;
+                    }
+
+                    // Add subtotal row for this item
+                    brokerSalesReportItems.Add(new BrokerSalesReportItem
+                    {
+                        ItemName = itemName,
+                        Packing = packingDisplay,
+                        Qty = itemTotalQty,
+                        TotalWeight = itemTotalWeight,
+                        NetAmount = itemTotalNetAmount,
+                        IsItemHeader = false,
+                        IsSubTotal = true
+                    });
+
+                    grandTotalQty += itemTotalQty;
+                    grandTotalWeight += itemTotalWeight;
+                    grandTotalNetAmount += itemTotalNetAmount;
+                }
+
+                stopwatch.Stop();
+
+                return Ok(new BrokerSalesReportResponse
+                {
+                    Success = true,
+                    Message = "Broker Sales Report retrieved successfully",
+                    Data = brokerSalesReportItems,
+                    FromDate = fromDate,
+                    ToDate = toDate,
+                    BrokerName = brokerName,
+                    TotalQty = grandTotalQty,
+                    TotalWeight = grandTotalWeight,
+                    TotalNetAmount = grandTotalNetAmount
+                });
+            }
+            catch (Exception ex)
+            {
+                stopwatch.Stop();
+                _logger.LogError(ex, "Error getting broker sales report");
+                return StatusCode(500, new BrokerSalesReportResponse
+                {
+                    Success = false,
+                    Message = $"Internal server error: {ex.Message}"
+                });
+            }
+        }
+
         // Supplier Purchase Ledger Report
         [HttpGet("supplier-purchase-ledger")]
         public async Task<ActionResult<SupplierPurchaseLedgerResponse>> GetSupplierPurchaseLedger(

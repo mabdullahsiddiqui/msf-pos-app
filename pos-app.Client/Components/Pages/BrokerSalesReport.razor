@@ -1,0 +1,272 @@
+@page "/reports/broker-sales-report"
+@using pos_app.Client.Services
+@using pos_app.Client.Models
+@using pos_app.Client.Components.Shared
+@inject DataService DataService
+@inject SessionService SessionService
+
+<PageTitle>Broker Sales Report - POS System</PageTitle>
+
+<style>
+    .item-header-row {
+        background-color: #6f42c1 !important;
+        color: white !important;
+        font-weight: bold;
+    }
+    
+    .subtotal-row {
+        background-color: #6f42c1 !important;
+        color: white !important;
+        font-weight: bold;
+    }
+    
+    .register-table td {
+        vertical-align: top;
+    }
+    
+    .register-table .text-end {
+        text-align: right;
+    }
+    
+    /* Ensure header text is black */
+    .register-table thead th {
+        color: #000 !important;
+    }
+</style>
+
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+
+            <!-- Filter Section -->
+            <FilterCard Title="Broker Report (Sales)" IconClass="fas fa-user-tie">
+                <div class="row mb-3">
+                    <SearchableAccountInput Label="Customer A/C:" Id="brokerAccount" @bind-Value="brokerAccountCode" ColumnClass="col-12 col-md-3" />
+                    <DateInput Label="From Date:" Id="fromDate" @bind-Value="fromDate" MinDate="@minDate" ColumnClass="col-12 col-md-3" />
+                    <DateInput Label="Upto Date:" Id="toDate" @bind-Value="toDate" ColumnClass="col-12 col-md-3" />
+                    <div class="col-12 col-md-3 d-flex align-items-end gap-2">
+                        <ActionButton Text="Preview" IconClass="fas fa-search" OnClick="LoadBrokerSalesReport" IsLoading="@isLoading" IsDisabled="@isLoading" />
+                    </div>
+                </div>
+            </FilterCard>
+
+            <!-- Loading Indicator -->
+            @if (isLoading)
+            {
+                <LoadingSpinner Message="Generating broker sales report..." />
+            }
+
+            <!-- Error Message -->
+            <ErrorAlert Message="@errorMessage" />
+
+            <!-- Report Data -->
+            @if (brokerSalesReportData != null && brokerSalesReportData.Success)
+            {
+                <ReportTable FilterableColumns="@(new List<int> { 0, 1 })">
+                    <HeaderContent>
+                        <ReportTitleHeader Title="Broker Report (Sales)" IconClass="fas fa-user-tie">
+                            <DateRangeContent>
+                                From: @brokerSalesReportData.FromDate.ToString("dd/MM/yyyy") 
+                                To Date: @brokerSalesReportData.ToDate.ToString("dd/MM/yyyy")
+                                @if (!string.IsNullOrWhiteSpace(brokerSalesReportData.BrokerName))
+                                {
+                                    <text> | Broker Name: @brokerSalesReportData.BrokerName</text>
+                                }
+                            </DateRangeContent>
+                        </ReportTitleHeader>
+                    </HeaderContent>
+                    
+                    <SummaryCards>
+                        <SummaryCard Title="Total Qty" Value="@CurrencyHelper.FormatNumber(brokerSalesReportData.TotalQty)" BgColor="info" ColumnClass="col-md-4" />
+                        <SummaryCard Title="Total Weight" Value="@CurrencyHelper.FormatNumber(brokerSalesReportData.TotalWeight)" BgColor="warning" ColumnClass="col-md-4" />
+                        <SummaryCard Title="Total Net Amount" Value="@CurrencyHelper.FormatNumber(brokerSalesReportData.TotalNetAmount)" BgColor="success" ColumnClass="col-md-4" />
+                    </SummaryCards>
+
+                    <BodyContent>
+                        <div class="table-responsive">
+                            <table class="table table-bordered register-table">
+                                <thead>
+                                    <tr>
+                                        <th>Invoice</th>
+                                        <th>Date</th>
+                                        <th class="text-end">Qty.</th>
+                                        <th class="text-end">Total Weight</th>
+                                        <th class="text-end">Rate.</th>
+                                        <th>As per</th>
+                                        <th class="text-end">Net Amt.</th>
+                                        <th>Deliver To</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @if (brokerSalesReportData.Data.Any())
+                                    {
+                                        @foreach (var item in brokerSalesReportData.Data)
+                                        {
+                                            @if (item.IsItemHeader)
+                                            {
+                                                <tr class="item-header-row">
+                                                    <td colspan="8">
+                                                        <strong>Item Name & Description: @item.ItemName.Trim()</strong>
+                                                        &nbsp;&nbsp;&nbsp;
+                                                        <strong>Packing: @item.Packing</strong>
+                                                    </td>
+                                                </tr>
+                                            }
+                                            else if (item.IsSubTotal)
+                                            {
+                                                <tr class="subtotal-row">
+                                                    <td colspan="2"><strong>Total</strong></td>
+                                                    <td class="text-end">
+                                                        <strong>
+                                                            @if (item.Qty % 1 == 0)
+                                                            {
+                                                                @((int)item.Qty)
+                                                            }
+                                                            else
+                                                            {
+                                                                @CurrencyHelper.FormatNumber(item.Qty)
+                                                            }
+                                                        </strong>
+                                                    </td>
+                                                    <td class="text-end"><strong>@CurrencyHelper.FormatNumber(item.TotalWeight)</strong></td>
+                                                    <td class="text-end"></td>
+                                                    <td></td>
+                                                    <td class="text-end"><strong>@CurrencyHelper.FormatNumber(item.NetAmount)</strong></td>
+                                                    <td></td>
+                                                </tr>
+                                            }
+                                            else
+                                            {
+                                                <tr>
+                                                    <td>@item.InvoiceNo</td>
+                                                    <td>
+                                                        @if (item.Date.HasValue)
+                                                        {
+                                                            @item.Date.Value.ToString("dd/MM/yyyy")
+                                                        }
+                                                    </td>
+                                                    <td class="text-end">
+                                                        @if (item.Qty % 1 == 0)
+                                                        {
+                                                            @((int)item.Qty)
+                                                        }
+                                                        else
+                                                        {
+                                                            @CurrencyHelper.FormatNumber(item.Qty)
+                                                        }
+                                                    </td>
+                                                    <td class="text-end">@CurrencyHelper.FormatNumber(item.TotalWeight)</td>
+                                                    <td class="text-end">@CurrencyHelper.FormatNumber(item.Rate)</td>
+                                                    <td>@item.AsPer</td>
+                                                    <td class="text-end">@CurrencyHelper.FormatNumber(item.NetAmount)</td>
+                                                    <td>@item.DeliverTo</td>
+                                                </tr>
+                                            }
+                                        }
+                                    }
+                                    else
+                                    {
+                                        <tr>
+                                            <td colspan="8" class="text-center text-muted">No sales transactions found for the selected broker and date range.</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                                @if (brokerSalesReportData.Data.Any())
+                                {
+                                    <tfoot>
+                                        <tr class="subtotal-row">
+                                            <td colspan="2"><strong>Grand Total</strong></td>
+                                            <td class="text-end"><strong>@CurrencyHelper.FormatNumber(brokerSalesReportData.TotalQty)</strong></td>
+                                            <td class="text-end"><strong>@CurrencyHelper.FormatNumber(brokerSalesReportData.TotalWeight)</strong></td>
+                                            <td class="text-end"></td>
+                                            <td></td>
+                                            <td class="text-end"><strong>@CurrencyHelper.FormatNumber(brokerSalesReportData.TotalNetAmount)</strong></td>
+                                            <td></td>
+                                        </tr>
+                                    </tfoot>
+                                }
+                            </table>
+                        </div>
+                    </BodyContent>
+
+                    <FooterContent>
+                        <div class="row">
+                            <div class="col-md-4">
+                                <strong>Total Qty: @CurrencyHelper.FormatNumber(brokerSalesReportData.TotalQty)</strong>
+                            </div>
+                            <div class="col-md-4">
+                                <strong>Total Weight: @CurrencyHelper.FormatNumber(brokerSalesReportData.TotalWeight)</strong>
+                            </div>
+                            <div class="col-md-4">
+                                <strong>Total Net Amount: @CurrencyHelper.FormatNumber(brokerSalesReportData.TotalNetAmount)</strong>
+                            </div>
+                        </div>
+                    </FooterContent>
+                </ReportTable>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    private DateTime fromDate;
+    private DateTime toDate = DateTime.Now;
+    private string brokerAccountCode = string.Empty;
+    private BrokerSalesReportResponse? brokerSalesReportData;
+    private bool isLoading = false;
+    private string errorMessage = string.Empty;
+    private DateTime? minDate;
+    
+    protected override async Task OnInitializedAsync()
+    {
+        // Get minimum date from session
+        minDate = await SessionService.GetMinDateAsync();
+        
+        // Set fromDate to session start_date if available, otherwise use current month start
+        if (minDate.HasValue)
+        {
+            fromDate = minDate.Value;
+        }
+        else
+        {
+            fromDate = new DateTime(DateTime.Now.Year, DateTime.Now.Month, 1);
+        }
+        
+        toDate = DateTime.Now;
+    }
+
+    private async Task LoadBrokerSalesReport()
+    {
+        if (fromDate > toDate)
+        {
+            errorMessage = "From Date cannot be greater than To Date.";
+            return;
+        }
+
+        isLoading = true;
+        errorMessage = string.Empty;
+        brokerSalesReportData = null;
+
+        try
+        {
+            brokerSalesReportData = await DataService.GetBrokerSalesReportAsync(
+                fromDate, 
+                toDate, 
+                string.IsNullOrWhiteSpace(brokerAccountCode) ? null : brokerAccountCode);
+            
+            if (!brokerSalesReportData.Success)
+            {
+                errorMessage = brokerSalesReportData.Message;
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"An error occurred while loading the broker sales report: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+}
+

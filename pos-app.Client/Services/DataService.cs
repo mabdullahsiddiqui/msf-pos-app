@@ -854,6 +854,48 @@ namespace pos_app.Client.Services
             }
         }
 
+        // Broker Sales Report
+        public async Task<BrokerSalesReportResponse> GetBrokerSalesReportAsync(
+            DateTime fromDate, 
+            DateTime toDate,
+            string? brokerAccountCode = null)
+        {
+            try
+            {
+                var client = await CreateAuthedClientAsync();
+                var url = "api/reports/broker-sales-report";
+                var queryParams = new List<string>();
+                
+                queryParams.Add($"fromDate={fromDate:yyyy-MM-dd}");
+                queryParams.Add($"toDate={toDate:yyyy-MM-dd}");
+                
+                if (!string.IsNullOrEmpty(brokerAccountCode))
+                {
+                    queryParams.Add($"brokerAccountCode={Uri.EscapeDataString(brokerAccountCode)}");
+                }
+                
+                if (queryParams.Any())
+                {
+                    url += "?" + string.Join("&", queryParams);
+                }
+
+                var response = await client.GetAsync(url);
+                if (response.IsSuccessStatusCode)
+                {
+                    var result = await response.Content.ReadFromJsonAsync<BrokerSalesReportResponse>();
+                    return result ?? new BrokerSalesReportResponse { Success = false, Message = "Invalid response from server" };
+                }
+
+                var errorContent = await response.Content.ReadAsStringAsync();
+                return new BrokerSalesReportResponse { Success = false, Message = $"Failed to fetch broker sales report: {response.StatusCode}" };
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error fetching broker sales report");
+                return new BrokerSalesReportResponse { Success = false, Message = $"Error: {ex.Message}" };
+            }
+        }
+
         // Item Purchase Ledger Report
         public async Task<ItemPurchaseLedgerResponse> GetItemPurchaseLedgerAsync(
             DateTime fromDate, 

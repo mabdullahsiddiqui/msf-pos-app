@@ -1,0 +1,98 @@
+================================================================================
+DEPLOYMENT SUMMARY - Version 2 to softxonepk.com
+================================================================================
+
+BUILD STATUS: ✅ COMPLETE
+Build Location: D:\POS\pos-app\pos-app\publish\
+Build Date: $(Get-Date -Format "yyyy-MM-dd HH:mm:ss")
+
+================================================================================
+WEB.CONFIG STATUS
+================================================================================
+✅ VERIFIED: Live web.config is IDENTICAL to local version
+   - Both use: AspNetCoreModuleV2
+   - Both have: stdoutLogEnabled="true"
+   - Both have: hostingModel="inprocess"
+   - SAFE TO REPLACE - No risk of breaking application
+
+NOTE: web.config.alternative uses AspNetCoreModule (not V2) but has enhanced
+      security features (App_Data protection). Only use if server supports it.
+
+================================================================================
+FILES TO UPLOAD
+================================================================================
+Source: D:\POS\pos-app\pos-app\publish\
+Target: Plesk File Manager → httpdocs/
+
+TOTAL FILES: ~80+ files
+TOTAL SIZE: ~50-60 MB
+
+CRITICAL FILES:
+  ✓ pos-app.dll (611 KB) - MAIN APPLICATION
+  ✓ web.config (478 bytes)
+  ✓ appsettings.Production.json (652 bytes)
+  ✓ pos-app.runtimeconfig.json (557 bytes)
+  ✓ pos-app.deps.json (87 KB)
+  ✓ wwwroot/ folder (entire folder)
+
+ALL DLL FILES: Upload all 75+ DLL files
+
+================================================================================
+FOLDERS TO PRESERVE (DO NOT DELETE/OVERWRITE)
+================================================================================
+⚠️  App_Data/ - Contains production database (master.db)
+⚠️  logs/ - Contains application logs (if exists)
+
+================================================================================
+DEPLOYMENT STEPS
+================================================================================
+1. Access Plesk File Manager → httpdocs/
+2. (Optional) Backup current web.config
+3. Upload ALL files from publish/ folder
+4. Upload entire wwwroot/ folder (overwrite)
+5. Upload web.config (safe to replace)
+6. Verify App_Data/master.db still exists
+7. Test application at https://softxonepk.com
+
+================================================================================
+JWT KEY VERIFICATION
+================================================================================
+Current JWT Key in appsettings.Production.json:
+LB1QS7XzDJO1jrwW2DtshwKHBzjKx0+KmsKmFmIUR203jrFg3g1TgbC8sBtERkFr
+
+⚠️  IMPORTANT: If this key differs from server, all users will be logged out.
+    Verify server's current JWT key before deployment if possible.
+
+================================================================================
+POST-DEPLOYMENT VERIFICATION
+================================================================================
+[ ] Application loads at https://softxonepk.com
+[ ] No 500 Internal Server Error
+[ ] Login works correctly
+[ ] Users not logged out (JWT key matches)
+[ ] Dashboard loads
+[ ] Reports accessible
+[ ] Static files load (CSS, JS)
+[ ] Database connections work
+
+================================================================================
+ROLLBACK PLAN
+================================================================================
+If issues occur:
+1. Restore backed-up web.config
+2. Restore previous version files
+3. Check logs/stdout folder for errors
+4. Contact support if App_Data was deleted
+
+================================================================================
+DOCUMENTATION FILES
+================================================================================
+- DEPLOYMENT_VERSION_2.md - Complete deployment guide
+- DEPLOYMENT_CHECKLIST_V2.md - Quick checklist
+- DEPLOYMENT_SUMMARY_V2.txt - This file
+
+================================================================================
+READY FOR DEPLOYMENT
+================================================================================
+All files are prepared and ready for upload via Plesk File Manager.
+

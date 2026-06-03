@@ -119,13 +119,20 @@ Write-Host ""
 # Upload files
 foreach ($file in $files) {
     $relativePath = $file.FullName.Substring($LocalPath.Length).TrimStart('\', '/')
+    # Ensure consistent forward slashes for comparisons
     $remoteFilePath = "$RemotePath/$relativePath".Replace('\', '/')
+    $remotePathNormalized = $RemotePath.Replace('\', '/')
     
     # Create directory structure if needed
     $remoteDir = Split-Path $remoteFilePath -Parent
-    if ($remoteDir -and $remoteDir -ne $RemotePath) {
-        $dirPath = $remoteDir.Replace($RemotePath, "").Replace('\', '/')
-        Create-FtpDirectory -DirectoryPath "$RemotePath$dirPath" -FtpBaseUri $ftpBaseUri -Credential $credential | Out-Null
+    $remoteDirNormalized = $remoteDir.Replace('\', '/')
+    
+    if ($remoteDirNormalized -and $remoteDirNormalized -ne $remotePathNormalized) {
+        # Get the relative directory path from the normalized remote path
+        $dirPath = $remoteDirNormalized.Substring($remotePathNormalized.Length).TrimStart('/')
+        if ($dirPath) {
+            Create-FtpDirectory -DirectoryPath "$remotePathNormalized/$dirPath" -FtpBaseUri $ftpBaseUri -Credential $credential | Out-Null
+        }
     }
     
     # Upload file

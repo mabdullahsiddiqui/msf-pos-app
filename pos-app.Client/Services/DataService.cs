@@ -312,7 +312,93 @@ namespace pos_app.Client.Services
         }
 
 
-        // Reports Methods
+        public async Task<List<DashboardComparisonData>> GetDashboardComparisonDataAsync()
+        {
+            try
+            {
+                var client = await CreateAuthedClientAsync();
+                var response = await client.GetAsync("api/clientdata/dashboard-comparison");
+                if (response.IsSuccessStatusCode)
+                {
+                    return await response.Content.ReadFromJsonAsync<List<DashboardComparisonData>>() ?? new List<DashboardComparisonData>();
+                }
+                return new List<DashboardComparisonData>();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting dashboard comparison data");
+                return new List<DashboardComparisonData>();
+            }
+        }
+
+        public async Task<List<ProductionDistributionData>> GetProductionDistributionAsync(DateTime? fromDate = null, DateTime? toDate = null)
+        {
+            try
+            {
+                var client = await CreateAuthedClientAsync();
+                var url = "api/clientdata/production-distribution";
+                var queryParams = new List<string>();
+                if (fromDate.HasValue) queryParams.Add($"fromDate={fromDate.Value:yyyy-MM-dd}");
+                if (toDate.HasValue) queryParams.Add($"toDate={toDate.Value:yyyy-MM-dd}");
+                if (queryParams.Any()) url += "?" + string.Join("&", queryParams);
+
+                var response = await client.GetAsync(url);
+                if (response.IsSuccessStatusCode)
+                {
+                    return await response.Content.ReadFromJsonAsync<List<ProductionDistributionData>>() ?? new List<ProductionDistributionData>();
+                }
+                return new List<ProductionDistributionData>();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting production distribution data");
+                return new List<ProductionDistributionData>();
+            }
+        }
+
+        public async Task<List<SalesDistributionData>> GetSalesDistributionAsync(DateTime? fromDate = null, DateTime? toDate = null)
+        {
+            try
+            {
+                var client = await CreateAuthedClientAsync();
+                var url = "api/clientdata/sales-distribution";
+                var queryParams = new List<string>();
+                if (fromDate.HasValue) queryParams.Add($"fromDate={fromDate.Value:yyyy-MM-dd}");
+                if (toDate.HasValue) queryParams.Add($"toDate={toDate.Value:yyyy-MM-dd}");
+                if (queryParams.Any()) url += "?" + string.Join("&", queryParams);
+
+                var response = await client.GetAsync(url);
+                if (response.IsSuccessStatusCode)
+                {
+                    return await response.Content.ReadFromJsonAsync<List<SalesDistributionData>>() ?? new List<SalesDistributionData>();
+                }
+                return new List<SalesDistributionData>();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting sales distribution data");
+                return new List<SalesDistributionData>();
+            }
+        }
+
+        public async Task<CEOReportResponse> GetCEOReportAsync()
+        {
+            try
+            {
+                var client = await CreateAuthedClientAsync();
+                var response = await client.GetAsync("api/clientdata/ceo-report");
+                if (response.IsSuccessStatusCode)
+                {
+                    return await response.Content.ReadFromJsonAsync<CEOReportResponse>() ?? new CEOReportResponse();
+                }
+                return new CEOReportResponse();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting CEO report data");
+                return new CEOReportResponse();
+            }
+        }
         
         /*
          * COMMENTED OUT - Simple Trial Balance (kept for backward compatibility)

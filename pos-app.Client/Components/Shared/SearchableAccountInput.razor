@@ -112,6 +112,9 @@
     // Whether the input is disabled
     [Parameter] public bool IsDisabled { get; set; } = false;
 
+    // Optional account type to filter by (e.g., "D" for Detail accounts)
+    [Parameter] public string? AccountTypeFilter { get; set; }
+
     private List<ClientCustomer> allAccounts = new();
     private List<ClientCustomer> filteredAccounts = new();
     private string accountSearchTerm = "";
@@ -172,7 +175,15 @@
     {
         try
         {
-            allAccounts = await DataService.GetCustomersAsync();
+            var accounts = await DataService.GetCustomersAsync();
+            if (!string.IsNullOrEmpty(AccountTypeFilter))
+            {
+                allAccounts = accounts.Where(a => a.AccType.Trim().ToUpper() == AccountTypeFilter.Trim().ToUpper()).ToList();
+            }
+            else
+            {
+                allAccounts = accounts.ToList();
+            }
             filteredAccounts = allAccounts.ToList();
         }
         catch (Exception ex)

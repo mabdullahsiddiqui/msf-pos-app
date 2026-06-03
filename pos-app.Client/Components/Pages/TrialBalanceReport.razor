@@ -18,16 +18,26 @@
     <div class="row">
         <div class="col-12">
 
-            <!-- Date Filter -->
             <FilterCard Title="Report Filters" IconClass="fas fa-calendar-alt">
-                <div class="row">
-                    <DateInput Label="As of Date:" Id="asOfDate" @bind-Value="asOfDate" />
-                    <div class="col-md-4">
+                <div class="row g-3">
+                    <DateInput Label="As of Date:" Id="asOfDate" @bind-Value="asOfDate" ColumnClass="col-md-3" />
+                    <div class="col-md-3">
+                        <label for="groupFilter" class="form-label">Account Group:</label>
+                        <select id="groupFilter" class="form-select" @bind="selectedGroupPrefix">
+                            <option value="">All Groups</option>
+                            <option value="1">Assets</option>
+                            <option value="2">Liabilities</option>
+                            <option value="3">Capital / Equity</option>
+                            <option value="4">Revenue</option>
+                            <option value="5">Expenses</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
                         <label for="searchAccName" class="form-label">AC Name:</label>
                         <SearchInput Id="searchAccName" Placeholder="Search AC Name..." @bind-Value="searchAccName" />
                     </div>
-                    <div class="col-md-2 d-flex align-items-end">
-                        <ActionButton Text="Generate Report" IconClass="bi bi-search" OnClick="LoadTrialBalance" />
+                    <div class="col-md-3 d-flex align-items-end">
+                        <ActionButton Text="Generate Report" IconClass="bi bi-search" OnClick="LoadTrialBalance" AdditionalClass="w-100" />
                     </div>
                 </div>
             </FilterCard>
@@ -60,9 +70,9 @@
                     </HeaderContent>
                     
             <SummaryCards>
-                <SummaryCard Title="Total Debit" Value="@CurrencyHelper.FormatNumber(trialBalanceData.TotalDebit)" BgColor="danger" />
-                <SummaryCard Title="Total Credit" Value="@CurrencyHelper.FormatNumber(trialBalanceData.TotalCredit)" BgColor="success" />
-                <SummaryCard Title="Balance Status" Value="@(trialBalanceData.TotalDebit == trialBalanceData.TotalCredit ? "BALANCED" : "UNBALANCED")" BgColor="@(trialBalanceData.TotalDebit == trialBalanceData.TotalCredit ? "success" : "warning")" />
+                <SummaryCard Title="Total Debit" Value="@CurrencyHelper.FormatNumber(DisplayTotalDebit)" BgColor="danger" />
+                <SummaryCard Title="Total Credit" Value="@CurrencyHelper.FormatNumber(DisplayTotalCredit)" BgColor="success" />
+                <SummaryCard Title="Balance Status" Value="@(DisplayTotalDebit == DisplayTotalCredit ? "BALANCED" : "UNBALANCED")" BgColor="@(DisplayTotalDebit == DisplayTotalCredit ? "success" : "warning")" />
                 <SummaryCard Title="Processing Time" Value="@($"{trialBalanceData.ProcessingTimeMs} ms")" BgColor="info" />
             </SummaryCards>
 
@@ -268,15 +278,15 @@
                     <FooterContent>
                         <div class="row">
                             <div class="col-md-6">
-                                <strong>Total Debit: @CurrencyHelper.FormatNumber(trialBalanceData.TotalDebit)</strong>
+                                <strong>Total Debit: @CurrencyHelper.FormatNumber(DisplayTotalDebit)</strong>
                             </div>
                             <div class="col-md-6">
-                                <strong>Total Credit: @CurrencyHelper.FormatNumber(trialBalanceData.TotalCredit)</strong>
+                                <strong>Total Credit: @CurrencyHelper.FormatNumber(DisplayTotalCredit)</strong>
                             </div>
                         </div>
                         <div class="row mt-2">
                             <div class="col-12">
-                                <strong>Balance Status: <span class="@(trialBalanceData.TotalDebit == trialBalanceData.TotalCredit ? "text-success" : "text-warning")">@(trialBalanceData.TotalDebit == trialBalanceData.TotalCredit ? "BALANCED" : "UNBALANCED")</span></strong>
+                                <strong>Balance Status: <span class="@(DisplayTotalDebit == DisplayTotalCredit ? "text-success" : "text-warning")">@(DisplayTotalDebit == DisplayTotalCredit ? "BALANCED" : "UNBALANCED")</span></strong>
                             </div>
                         </div>
                     </FooterContent>
@@ -295,6 +305,17 @@
     
     // Search state variables
     private string searchAccName = string.Empty;
+    
+    // Group filter prefix
+    private string selectedGroupPrefix = string.Empty;
+
+    private decimal DisplayTotalDebit => string.IsNullOrEmpty(selectedGroupPrefix)
+        ? (trialBalanceData?.TotalDebit ?? 0)
+        : (trialBalanceData?.Data.Where(a => a.AccCode.Replace("-", "").StartsWith(selectedGroupPrefix) && long.TryParse(a.AccCode.Replace("-", ""), out var num) && num % 100000000 == 0).Sum(a => a.Debit) ?? 0);
+
+    private decimal DisplayTotalCredit => string.IsNullOrEmpty(selectedGroupPrefix)
+        ? (trialBalanceData?.TotalCredit ?? 0)
+        : (trialBalanceData?.Data.Where(a => a.AccCode.Replace("-", "").StartsWith(selectedGroupPrefix) && long.TryParse(a.AccCode.Replace("-", ""), out var num) && num % 100000000 == 0).Sum(a => a.Credit) ?? 0);
     
     // Accordion collapse state management
     private Dictionary<string, bool> collapseState = new Dictionary<string, bool>();
@@ -316,6 +337,15 @@
     private bool ShouldShowAccount(string accCode)
     {
         if (trialBalanceData?.Data == null) return true;
+        
+        // Apply group prefix filter
+        if (!string.IsNullOrEmpty(selectedGroupPrefix))
+        {
+            var cleanCode = accCode.Replace("-", "").Trim();
+            if (!cleanCode.StartsWith(selectedGroupPrefix))
+                return false;
+        }
+
         if (string.IsNullOrWhiteSpace(searchAccName))
             return true;
 

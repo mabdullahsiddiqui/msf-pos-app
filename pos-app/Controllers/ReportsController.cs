@@ -721,8 +721,8 @@ namespace pos_app.Controllers
                 var toDateString = to.ToString("yyyy/MM/dd");
 
                 // Default account range if not provided
-                var fromAcc = fromAccount ?? "1-01-01-0000";
-                var uptoAcc = uptoAccount ?? "1-01-01-9999";
+                var fromAcc = fromAccount ?? "1-01-00-0000";
+                var uptoAcc = uptoAccount ?? "9-99-99-9999";
 
                 // Convert account codes to numeric for range filtering
                 var fromAccountNumeric = long.Parse(fromAcc.Replace("-", ""));
@@ -752,6 +752,7 @@ namespace pos_app.Controllers
                     ) as b ON c.acc_code = b.acc_code
                     WHERE CAST(REPLACE(c.acc_code, '-', '') AS BIGINT) >= {fromAccountNumeric}
                       AND CAST(REPLACE(c.acc_code, '-', '') AS BIGINT) <= {uptoAccountNumeric}
+                      AND c.acc_type = 'D'
                     ORDER BY c.acc_code";
 
                 var results = await _dataAccessService.ExecuteQueryAsync(user, query);
@@ -4672,8 +4673,8 @@ namespace pos_app.Controllers
                 }
 
                 // Set defaults
-                var fromAcc = fromAccount ?? "1-01-01-0000";
-                var uptoAcc = uptoAccount ?? "1-01-01-9999";
+                var fromAcc = fromAccount ?? "1-01-00-0000";
+                var uptoAcc = uptoAccount ?? "9-99-99-9999";
                 var asOn = asOnDate ?? DateTime.Now;
                 var reportTypeValue = reportType?.ToLower() ?? "detailed";
 
@@ -5053,8 +5054,8 @@ namespace pos_app.Controllers
                 }
 
                 // Set defaults
-                var fromAcc = fromAccount ?? "0-00-00-0000";
-                var uptoAcc = uptoAccount ?? "0-00-00-0000";
+                var fromAcc = fromAccount ?? "1-01-00-0000";
+                var uptoAcc = uptoAccount ?? "9-99-99-9999";
                 var asOn = asOnDate ?? DateTime.Now;
                 var reportTypeValue = reportType?.ToLower() ?? "detailed";
                 var minBal = minBalance ?? 0;

@@ -4,6 +4,12 @@
 @implements IAsyncDisposable
 
 <div class="report-table-container">
+    <div class="d-flex justify-content-end mb-2 no-print">
+        <button class="btn btn-outline-secondary btn-sm" @onclick="PrintReport" title="Print / Save as PDF">
+            <i class="fas fa-print me-1"></i> Print / PDF
+        </button>
+    </div>
+
     @if (HeaderContent != null)
     {
         <div class="report-header">
@@ -209,6 +215,18 @@
         if (jsModule != null)
         {
             await jsModule.DisposeAsync();
+        }
+    }
+
+    private async Task PrintReport()
+    {
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("window.print");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error printing report: {ex.Message}");
         }
     }
 }

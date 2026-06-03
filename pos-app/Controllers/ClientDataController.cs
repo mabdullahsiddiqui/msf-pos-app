@@ -70,7 +70,29 @@ namespace pos_app.Controllers
             }
         }
 
-        // GET: api/clientdata/customers-ef
+        // GET: api/clientdata/dashboard-comparison
+        [HttpGet("dashboard-comparison")]
+        public async Task<ActionResult> GetDashboardComparison()
+        {
+            try
+            {
+                var userId = GetCurrentUserId();
+                var user = await _authService.GetActiveUserAsync(userId);
+                
+                if (user == null)
+                {
+                    return BadRequest("No active database connection found.");
+                }
+ 
+                var comparisonData = await _clientDataService.GetDashboardComparisonDataAsync(user);
+                return Ok(comparisonData);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting dashboard comparison data");
+                return StatusCode(500, "Internal server error");
+            }
+        }
         // NEW: Example EF-based CRUD endpoint
         [HttpGet("customers-ef")]
         public async Task<ActionResult> GetCustomersUsingEF()
@@ -206,8 +228,76 @@ namespace pos_app.Controllers
             }
         }
 
-        // GET: api/clientdata/customers
-        [HttpGet("customers")]
+        // GET: api/clientdata/production-distribution
+        [HttpGet("production-distribution")]
+        public async Task<ActionResult> GetProductionDistribution([FromQuery] DateTime? fromDate, [FromQuery] DateTime? toDate)
+        {
+            try
+            {
+                var userId = GetCurrentUserId();
+                var user = await _authService.GetActiveUserAsync(userId);
+                
+                if (user == null)
+                {
+                    return BadRequest("No active database connection found.");
+                }
+ 
+                var distributionData = await _clientDataService.GetProductionDistributionAsync(user, fromDate, toDate);
+                return Ok(distributionData);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting production distribution data");
+                return StatusCode(500, "Internal server error");
+            }
+        }
+
+        // GET: api/clientdata/sales-distribution
+        [HttpGet("sales-distribution")]
+        public async Task<ActionResult> GetSalesDistribution([FromQuery] DateTime? fromDate, [FromQuery] DateTime? toDate)
+        {
+            try
+            {
+                var userId = GetCurrentUserId();
+                var user = await _authService.GetActiveUserAsync(userId);
+                
+                if (user == null)
+                {
+                    return BadRequest("No active database connection found.");
+                }
+ 
+                var distributionData = await _clientDataService.GetSalesDistributionAsync(user, fromDate, toDate);
+                return Ok(distributionData);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting sales distribution data");
+                return StatusCode(500, "Internal server error");
+            }
+        }
+        // GET: api/clientdata/ceo-report
+        [HttpGet("ceo-report")]
+        public async Task<ActionResult> GetCEOReport()
+        {
+            try
+            {
+                var userId = GetCurrentUserId();
+                var user = await _authService.GetActiveUserAsync(userId);
+                
+                if (user == null)
+                {
+                    return BadRequest("No active database connection found.");
+                }
+ 
+                var reportData = await _clientDataService.GetCEOReportAsync(user);
+                return Ok(reportData);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting CEO report data");
+                return StatusCode(500, "Internal server error");
+            }
+        }
         public async Task<ActionResult> GetCustomers()
         {
             try

@@ -113,3 +113,4 @@ Write-Host "   - Plesk → Files → logs/stdout_*.log" -ForegroundColor White
 Write-Host "   - Look for any error messages" -ForegroundColor White
 Write-Host ""
 
+

@@ -355,3 +355,48 @@ h1:focus {
         padding-right: 1rem;
     }
 }
+
+/* Premium PDF/Print Report Layout Styles */
+@media print {
+    /* Hide navigation sidebar, top bars, filter cards, and interactive buttons */
+    .sidebar, .navmenu, .navbar, .top-row, .no-print, 
+    .filter-card, .filter-row, .btn, button, .export-btn, .clear-search-btn, 
+    .blazor-error-boundary, #blazor-error-ui, .accordion-button::after {
+        display: none !important;
+    }
+
+    /* Reset spacing and widths for full page PDF output */
+    html, body, .main, .content, .container-fluid, .row, .col-12, 
+    .report-table-container, .table-container, .table {
+        background: transparent !important;
+        color: #000 !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        border: none !important;
+        box-shadow: none !important;
+        float: none !important;
+    }
+
+    /* Retain clean borders and high contrast for reports structure */
+    .accordion-item, .card, .card-body {
+        border: 1px solid #000 !important;
+        box-shadow: none !important;
+        margin-bottom: 10px !important;
+        background: transparent !important;
+    }
+
+    .table-bordered th, .table-bordered td {
+        border: 1px solid #000 !important;
+    }
+
+    .table td, .table th, h4, h2, span, strong, small {
+        color: #000 !important;
+    }
+
+    /* Prevent awkward mid-row breaks across pages */
+    tr {
+        page-break-inside: avoid !important;
+    }
+}

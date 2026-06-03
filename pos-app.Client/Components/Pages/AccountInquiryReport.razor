@@ -15,7 +15,7 @@
             <!-- Filter Card -->
             <FilterCard Title="Account Inquiry" IconClass="fas fa-search">
                 <div class="row g-3 mb-3">
-                    <SearchableAccountInput Label="A/C Code:" Id="accountCode" Value="@selectedAccountCode" ValueChanged="OnAccountChanged" />
+                    <SearchableAccountInput Label="A/C Code:" Id="accountCode" Value="@selectedAccountCode" ValueChanged="OnAccountChanged" AccountTypeFilter="D" />
                     
                     <DateInput Label="UpTo Date:" Id="uptoDate" @bind-Value="uptoDate" MinDate="@minDate" />
                     

@@ -105,8 +105,209 @@
                 </div>
             </div>
         </div>
+        <!-- Trend Chart Row -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="card shadow-sm border-0">
+                    <div class="card-header bg-white py-3">
+                        <h5 class="mb-0 fw-bold text-dark">
+                            <i class="fas fa-chart-line text-primary me-2"></i>
+                            Sales, Recovery & Expenses Trend
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div style="height: 350px;" class="position-relative">
+                            @if (comparisonData == null || !comparisonData.Any())
+                            {
+                                <div class="position-absolute top-50 start-50 translate-middle text-center text-muted">
+                                    <i class="fas fa-chart-area fa-3x mb-3 opacity-25"></i>
+                                    <p class="mb-0">No trend data available.</p>
+                                </div>
+                            }
+                            <canvas id="comparisonChart" style='display: @(comparisonData?.Any() == true ? "block" : "none")'></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
 
-        <!-- Quick Actions - All Reports -->
+        <!-- Distribution Charts Row -->
+        <div class="row mb-4 g-4">
+            <!-- Production Distribution Chart -->
+            <div class="col-12 col-xl-6">
+                <div class="card shadow-sm border-0 h-100">
+                    <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0 fw-bold text-dark">
+                            <i class="fas fa-industry text-success me-2"></i>
+                            Production Analysis
+                        </h5>
+                        <div class="btn-group btn-group-sm" role="group">
+                            <button type="button" class="btn @(productionPeriod == "all" ? "btn-success" : "btn-outline-success")" @onclick='() => ChangeProductionPeriod("all")'>All</button>
+                            <button type="button" class="btn @(productionPeriod == "today" ? "btn-success" : "btn-outline-success")" @onclick='() => ChangeProductionPeriod("today")'>Today</button>
+                            <button type="button" class="btn @(productionPeriod == "week" ? "btn-success" : "btn-outline-success")" @onclick='() => ChangeProductionPeriod("week")'>Week</button>
+                            <button type="button" class="btn @(productionPeriod == "month" ? "btn-success" : "btn-outline-success")" @onclick='() => ChangeProductionPeriod("month")'>Month</button>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div style="height: 350px;" class="position-relative">
+                            @if (isProductionLoading)
+                            {
+                                <div class="position-absolute top-50 start-50 translate-middle">
+                                    <div class="spinner-border text-success" role="status"></div>
+                                </div>
+                            }
+                            else if (productionData == null || !productionData.Any())
+                            {
+                                <div class="position-absolute top-50 start-50 translate-middle text-center text-muted">
+                                    <i class="fas fa-database fa-3x mb-3 opacity-25"></i>
+                                    <p class="mb-0">No production data found.</p>
+                                </div>
+                            }
+                            <canvas id="productionChart" style='display: @(productionData?.Any() == true ? "block" : "none")'></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Sales Distribution Chart -->
+            <div class="col-12 col-xl-6">
+                <div class="card shadow-sm border-0 h-100">
+                    <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0 fw-bold text-dark">
+                            <i class="fas fa-shopping-cart text-info me-2"></i>
+                            Sales Analysis
+                        </h5>
+                        <div class="btn-group btn-group-sm" role="group">
+                            <button type="button" class="btn @(salesPeriod == "all" ? "btn-info text-white" : "btn-outline-info")" @onclick='() => ChangeSalesPeriod("all")'>All</button>
+                            <button type="button" class="btn @(salesPeriod == "today" ? "btn-info text-white" : "btn-outline-info")" @onclick='() => ChangeSalesPeriod("today")'>Today</button>
+                            <button type="button" class="btn @(salesPeriod == "week" ? "btn-info text-white" : "btn-outline-info")" @onclick='() => ChangeSalesPeriod("week")'>Week</button>
+                            <button type="button" class="btn @(salesPeriod == "month" ? "btn-info text-white" : "btn-outline-info")" @onclick='() => ChangeSalesPeriod("month")'>Month</button>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div style="height: 350px;" class="position-relative">
+                            @if (isSalesLoading)
+                            {
+                                <div class="position-absolute top-50 start-50 translate-middle">
+                                    <div class="spinner-border text-info" role="status"></div>
+                                </div>
+                            }
+                            else if (salesData == null || !salesData.Any())
+                            {
+                                <div class="position-absolute top-50 start-50 translate-middle text-center text-muted">
+                                    <i class="fas fa-cash-register fa-3x mb-3 opacity-25"></i>
+                                    <p class="mb-0">No sales data found.</p>
+                                </div>
+                            }
+                            <canvas id="salesChart" style='display: @(salesData?.Any() == true ? "block" : "none")'></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- CEO Summary Tables -->
+        <div class="row mb-4">
+            <!-- Performance Summary -->
+            <div class="col-12 mb-4">
+                <div class="card shadow-sm border-0">
+                    <div class="card-header bg-white py-3">
+                        <h5 class="mb-0 fw-bold text-dark">
+                            <i class="fas fa-file-invoice-dollar text-primary me-2"></i>
+                            Executive Performance Summary
+                        </h5>
+                    </div>
+                    <div class="card-body p-0">
+                        <div class="table-responsive">
+                            <table class="table table-hover align-middle mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th class="ps-4">Period</th>
+                                        <th class="text-end">Sales</th>
+                                        <th class="text-end">Sales Ret</th>
+                                        <th class="text-end">Net Sales</th>
+                                        <th class="text-end">Recovery</th>
+                                        <th class="text-end pe-4">Purchase</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @if (ceoReport.PerformanceSummary?.Any() == true)
+                                    {
+                                        @foreach (var row in ceoReport.PerformanceSummary)
+                                        {
+                                            <tr>
+                                                <td class="ps-4 fw-semibold">@row.Legend</td>
+                                                <td class="text-end">@row.Sales.ToString("N0")</td>
+                                                <td class="text-end text-danger">@row.SalesRet.ToString("N0")</td>
+                                                <td class="text-end fw-bold text-primary">@row.NetSales.ToString("N0")</td>
+                                                <td class="text-end text-success">@row.Recovery.ToString("N0")</td>
+                                                <td class="text-end pe-4 text-warning">@row.Purchase.ToString("N0")</td>
+                                            </tr>
+                                        }
+                                    }
+                                    else
+                                    {
+                                        <tr>
+                                            <td colspan="6" class="text-center py-4 text-muted">No summary data available.</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Bank Summary -->
+            <div class="col-12">
+                <div class="card shadow-sm border-0">
+                    <div class="card-header bg-white py-3">
+                        <h5 class="mb-0 fw-bold text-dark">
+                            <i class="fas fa-university text-info me-2"></i>
+                            Bank Balance Summary
+                        </h5>
+                    </div>
+                    <div class="card-body p-0">
+                        <div class="table-responsive">
+                            <table class="table table-hover align-middle mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th class="ps-4">Account</th>
+                                        <th class="text-end">Prev. Balance</th>
+                                        <th class="text-end">Debit (In)</th>
+                                        <th class="text-end">Credit (Out)</th>
+                                        <th class="text-end pe-4">Current Balance</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @if (ceoReport.BankSummary?.Any() == true)
+                                    {
+                                        @foreach (var row in ceoReport.BankSummary)
+                                        {
+                                            <tr>
+                                                <td class="ps-4">
+                                                    <div class="fw-semibold">@row.AccName</div>
+                                                </td>
+                                                <td class="text-end">@row.PrevBalance.ToString("N0") <span class="badge @(row.PrevType == "Dr." ? "bg-success" : "bg-danger")">@row.PrevType</span></td>
+                                                <td class="text-end text-success">@row.Debit.ToString("N0")</td>
+                                                <td class="text-end text-danger">@row.Credit.ToString("N0")</td>
+                                                <td class="text-end pe-4 fw-bold">@row.CurBal.ToString("N0") <span class="badge @(row.CurType == "Dr." ? "bg-success" : "bg-danger")">@row.CurType</span></td>
+                                            </tr>
+                                        }
+                                    }
+                                    else
+                                    {
+                                        <tr>
+                                            <td colspan="5" class="text-center py-4 text-muted">No bank data found.</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
         <div class="row">
             <div class="col-12">
                 <div class="card">
@@ -266,10 +467,157 @@
     private bool isLoading = true;
     private bool connectionError = false;
     private ClientDashboardData dashboardData = new();
+    private List<DashboardComparisonData> comparisonData = new();
+    private List<ProductionDistributionData> productionData = new();
+    private List<SalesDistributionData> salesData = new();
+    private CEOReportResponse ceoReport = new();
+    private string productionPeriod = "all";
+    private string salesPeriod = "all";
+    private bool isProductionLoading = false;
+    private bool isSalesLoading = false;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await JSRuntime.InvokeVoidAsync("chartHelper.initialize");
+        }
+    }
 
     protected override async Task OnInitializedAsync()
     {
         await LoadDashboardData();
+        await LoadChartData();
+    }
+
+    private async Task LoadChartData()
+    {
+        try
+        {
+            // Load Comparison Chart (Sales, Recovery, Expenses) - All time
+            comparisonData = await DataService.GetDashboardComparisonDataAsync();
+            if (comparisonData != null && comparisonData.Any())
+            {
+                await Task.Delay(100);
+                await JSRuntime.InvokeVoidAsync("chartHelper.renderDashboardChart", "comparisonChart", comparisonData);
+            }
+            StateHasChanged();
+
+            // Load Distribution Charts
+            await LoadProductionChart();
+            await LoadSalesChart();
+
+            // Load CEO Report Summary
+            ceoReport = await DataService.GetCEOReportAsync();
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading chart data: {ex.Message}");
+        }
+    }
+
+    private async Task LoadProductionChart()
+    {
+        isProductionLoading = true;
+        StateHasChanged();
+        
+        try
+        {
+            DateTime? fromDate = null;
+            DateTime toDate = DateTime.Now;
+
+            if (productionPeriod == "all")
+            {
+                fromDate = null;
+                toDate = DateTime.Now;
+            }
+            else if (productionPeriod == "today")
+            {
+                fromDate = DateTime.Today;
+            }
+            else if (productionPeriod == "week")
+            {
+                // Start of week (Sunday)
+                fromDate = DateTime.Today.AddDays(-(int)DateTime.Today.DayOfWeek);
+            }
+            else if (productionPeriod == "month")
+            {
+                // Start of month
+                fromDate = new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1);
+            }
+
+            productionData = await DataService.GetProductionDistributionAsync(fromDate, toDate);
+            
+            if (productionData != null && productionData.Any())
+            {
+                // Give the UI time to render the canvas if it was hidden/loading
+                await Task.Delay(50);
+                await JSRuntime.InvokeVoidAsync("chartHelper.renderProductionChart", "productionChart", productionData);
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading production chart: {ex.Message}");
+        }
+        finally
+        {
+            isProductionLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task ChangeProductionPeriod(string period)
+    {
+        if (productionPeriod == period) return;
+        
+        productionPeriod = period;
+        await LoadProductionChart();
+    }
+
+    private async Task LoadSalesChart()
+    {
+        isSalesLoading = true;
+        StateHasChanged();
+        
+        try
+        {
+            DateTime? fromDate = null;
+            DateTime toDate = DateTime.Now;
+
+            if (salesPeriod == "all")
+            {
+                fromDate = null;
+                toDate = DateTime.Now;
+            }
+            else if (salesPeriod == "today") fromDate = DateTime.Today;
+            else if (salesPeriod == "week") fromDate = DateTime.Today.AddDays(-(int)DateTime.Today.DayOfWeek);
+            else if (salesPeriod == "month") fromDate = new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1);
+
+            salesData = await DataService.GetSalesDistributionAsync(fromDate, toDate);
+            
+            if (salesData != null && salesData.Any())
+            {
+                await Task.Delay(50);
+                await JSRuntime.InvokeVoidAsync("chartHelper.renderProductionChart", "salesChart", salesData);
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading sales chart: {ex.Message}");
+        }
+        finally
+        {
+            isSalesLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task ChangeSalesPeriod(string period)
+    {
+        if (salesPeriod == period) return;
+        salesPeriod = period;
+        await LoadSalesChart();
     }
 
     private async Task LoadDashboardData()

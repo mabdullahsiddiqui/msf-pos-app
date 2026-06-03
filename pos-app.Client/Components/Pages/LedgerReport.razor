@@ -275,7 +275,8 @@
     {
         try
         {
-            allAccounts = await DataService.GetCustomersAsync();
+            var accounts = await DataService.GetCustomersAsync();
+            allAccounts = accounts.Where(a => a.AccType.Trim().ToUpper() == "D").ToList();
             filteredAccounts = allAccounts.ToList();
         }
         catch (Exception ex)

@@ -359,14 +359,15 @@ h1:focus {
 /* Premium PDF/Print Report Layout Styles */
 @media print {
     /* Hide navigation sidebar, top bars, filter cards, and interactive buttons */
-    .sidebar, .navmenu, .navbar, .top-row, .no-print, 
+    .sidebar, .sidebar-overlay, .topbar, .navmenu, .navbar, .top-row, .no-print, 
     .filter-card, .filter-row, .btn, button, .export-btn, .clear-search-btn, 
-    .blazor-error-boundary, #blazor-error-ui, .accordion-button::after {
+    .blazor-error-boundary, #blazor-error-ui, .accordion-button::after,
+    .report-header, .summary-cards, .report-footer {
         display: none !important;
     }
 
     /* Reset spacing and widths for full page PDF output */
-    html, body, .main, .content, .container-fluid, .row, .col-12, 
+    html, body, .main, .main-content, .content, .content-area, .container-fluid, .row, .col-12, 
     .report-table-container, .table-container, .table {
         background: transparent !important;
         color: #000 !important;
@@ -379,6 +380,17 @@ h1:focus {
         float: none !important;
     }
 
+    /* Fix for blank pages - force block layout and visible overflow on wrappers */
+    html, body, #app, .min-vh-100, .main-content, .content-area, 
+    .report-table-container, .table-container, .table-responsive {
+        display: block !important;
+        overflow: visible !important;
+        height: auto !important;
+        max-height: none !important;
+        min-height: auto !important;
+        position: static !important;
+    }
+
     /* Retain clean borders and high contrast for reports structure */
     .accordion-item, .card, .card-body {
         border: 1px solid #000 !important;
@@ -387,11 +399,57 @@ h1:focus {
         background: transparent !important;
     }
 
+    /* Traditional serif font for printed documents */
+    .trial-balance-print-table,
+    .trial-balance-print-table th,
+    .trial-balance-print-table td,
+    .trial-balance-print-table tr,
+    .print-header-content {
+        font-family: "Times New Roman", Times, serif !important;
+        color: #000 !important;
+    }
+
+    .trial-balance-print-table {
+        border-collapse: collapse !important;
+        width: 100% !important;
+    }
+
+    .trial-balance-print-table th, 
+    .trial-balance-print-table td {
+        border: 1px solid #000 !important;
+        padding: 4px 6px !important;
+        font-size: 11pt !important;
+        background-color: transparent !important;
+    }
+
+    /* Hide A/C Code column on print as requested */
+    .trial-balance-print-table .tb-col-ac-code {
+        display: none !important;
+    }
+
+    /* Company header styles */
+    .print-header-content {
+        border-bottom: 2px double #000 !important;
+        margin-bottom: 10px !important;
+        text-align: center !important;
+    }
+
+    .print-comp-name {
+        font-size: 18pt !important;
+        font-weight: bold !important;
+        letter-spacing: 1px;
+    }
+
+    .print-comp-address, .print-comp-phone {
+        font-size: 10pt !important;
+        margin-top: 2px !important;
+    }
+
     .table-bordered th, .table-bordered td {
         border: 1px solid #000 !important;
     }
 
-    .table td, .table th, h4, h2, span, strong, small {
+    .table td, .table th, h6, h4, h2, span, strong, small {
         color: #000 !important;
     }
 

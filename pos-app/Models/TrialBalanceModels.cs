@@ -48,6 +48,9 @@ namespace pos_app.Models
         public decimal TotalCurDebit { get; set; }
         public decimal TotalCurCredit { get; set; }
         public decimal TotalCurBal { get; set; }
+        public string? CompanyName { get; set; }
+        public string? CompanyAddress { get; set; }
+        public string? PhoneFax { get; set; }
     }
 
     // Monthly Account Balance Models

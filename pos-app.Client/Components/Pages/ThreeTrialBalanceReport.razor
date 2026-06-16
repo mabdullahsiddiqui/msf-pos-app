@@ -68,22 +68,43 @@
 
                     <BodyContent>
                         <div class="table-responsive">
-                            <table class="table table-striped table-hover mb-0">
+                            <table class="table table-striped table-hover mb-0 trial-balance-print-table">
                                 <thead>
+                                    <!-- Print Only Company Info Header that repeats on every page -->
+                                    <tr class="d-none d-print-table-row company-print-header">
+                                        <th colspan="5" class="text-center border-0 p-0">
+                                            <div class="py-2 print-header-content">
+                                                <h2 class="m-0 fw-bold print-comp-name">@threeTrialBalanceData.CompanyName</h2>
+                                                @if (!string.IsNullOrWhiteSpace(threeTrialBalanceData.CompanyAddress))
+                                                {
+                                                    <div class="print-comp-address small">@threeTrialBalanceData.CompanyAddress</div>
+                                                }
+                                                @if (!string.IsNullOrWhiteSpace(threeTrialBalanceData.PhoneFax))
+                                                {
+                                                    <div class="print-comp-phone small">@threeTrialBalanceData.PhoneFax</div>
+                                                }
+                                                <h5 class="mt-2 mb-1 fw-bold text-decoration-underline">Three Trial Balance Report</h5>
+                                                <div class="small fw-normal">
+                                                    From Date: @threeTrialBalanceData.FromDate.ToString("dd/MM/yyyy") &nbsp;&nbsp; Upto Date: @threeTrialBalanceData.ToDate.ToString("dd/MM/yyyy")
+                                                </div>
+                                            </div>
+                                        </th>
+                                    </tr>
+                                    <!-- Main Table Column Header Row (Flat Layout) -->
                                     <tr>
-                                        <th>A/C Code</th>
-                                        <th>A/C Name</th>
-                                        <th class="text-end">Previous Balance</th>
-                                        <th class="text-end">Current Debit</th>
-                                        <th class="text-end">Current Credit</th>
-                                        <th class="text-end">Current Balance</th>
+                                        <th class="align-middle tb-col-ac-code">A/C Code</th>
+                                        <th class="align-middle">A/C Name</th>
+                                        <th class="text-end align-middle">Previous Balance</th>
+                                        <th class="text-end align-middle">Current Debit</th>
+                                        <th class="text-end align-middle">Current Credit</th>
+                                        <th class="text-end align-middle">Current Balance</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     @foreach (var item in threeTrialBalanceData.Data)
                                     {
                                         <tr>
-                                            <td><strong>@item.AccCode</strong></td>
+                                            <td class="tb-col-ac-code"><strong>@item.AccCode</strong></td>
                                             <td>@item.AccName</td>
                                             <td class="text-end">
                                                 @if (item.PrevBal > 0)
@@ -132,23 +153,24 @@
                                         </tr>
                                     }
                                 </tbody>
-                                <tfoot class="table-secondary">
-                                    <tr>
-                                        <th colspan="2"><strong>TOTAL</strong></th>
-                                        <th class="text-end">
+                                <tbody>
+                                    <tr class="table-secondary fw-bold align-middle">
+                                        <td class="tb-col-ac-code"></td>
+                                        <td><strong>TOTAL</strong></td>
+                                        <td class="text-end">
                                             <strong>@CurrencyHelper.FormatNumber(threeTrialBalanceData.TotalPrevBal)</strong>
-                                        </th>
-                                        <th class="text-end">
+                                        </td>
+                                        <td class="text-end">
                                             <strong class="text-danger">@CurrencyHelper.FormatNumber(threeTrialBalanceData.TotalCurDebit)</strong>
-                                        </th>
-                                        <th class="text-end">
+                                        </td>
+                                        <td class="text-end">
                                             <strong class="text-success">@CurrencyHelper.FormatNumber(threeTrialBalanceData.TotalCurCredit)</strong>
-                                        </th>
-                                        <th class="text-end">
+                                        </td>
+                                        <td class="text-end">
                                             <strong>@CurrencyHelper.FormatNumber(threeTrialBalanceData.TotalCurBal)</strong>
-                                        </th>
+                                        </td>
                                     </tr>
-                                </tfoot>
+                                </tbody>
                             </table>
                         </div>
                     </BodyContent>

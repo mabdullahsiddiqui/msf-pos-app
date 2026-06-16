@@ -313,16 +313,24 @@ namespace pos_app.Controllers
                     return BadRequest("No active database connection found. Please set up your database connection first.");
                 }
 
-                var query = @"SELECT TOP 1 comp_name as CompanyName FROM head";
+                var query = @"SELECT TOP 1 comp_name as CompanyName, comp_adr as CompanyAddress, ph_fax as PhoneFax FROM head";
                 var result = await _dataAccessService.ExecuteQueryAsync(user, query);
-                var compName = result.FirstOrDefault()?["CompanyName"]?.ToString();
+                var row = result.FirstOrDefault();
+                
+                var compName = row?["CompanyName"]?.ToString();
+                var compAdr = row?["CompanyAddress"]?.ToString();
+                var phoneFax = row?["PhoneFax"]?.ToString();
                 
                 if (string.IsNullOrWhiteSpace(compName))
                 {
                     compName = user.CompanyName;
                 }
 
-                return Ok(new { CompanyName = compName });
+                return Ok(new { 
+                    CompanyName = compName, 
+                    CompanyAddress = compAdr, 
+                    PhoneFax = phoneFax 
+                });
             }
             catch (Exception ex)
             {

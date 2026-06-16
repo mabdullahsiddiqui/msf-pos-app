@@ -796,6 +796,32 @@ namespace pos_app.Controllers
                     totalCurBal += item.CurBal;
                 }
 
+                // Query company details from head table
+                string? compName = null;
+                string? compAdr = null;
+                string? phoneFax = null;
+                try
+                {
+                    var headQuery = @"SELECT TOP 1 comp_name as CompanyName, comp_adr as CompanyAddress, ph_fax as PhoneFax FROM head";
+                    var headResult = await _dataAccessService.ExecuteQueryAsync(user, headQuery);
+                    var headRow = headResult.FirstOrDefault();
+                    if (headRow != null)
+                    {
+                        compName = headRow["CompanyName"]?.ToString();
+                        compAdr = headRow["CompanyAddress"]?.ToString();
+                        phoneFax = headRow["PhoneFax"]?.ToString();
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to fetch company details from head table for 3 Trial Balance report.");
+                }
+
+                if (string.IsNullOrWhiteSpace(compName))
+                {
+                    compName = user.CompanyName;
+                }
+
                 return Ok(new ThreeTrialBalanceResponse
                 {
                     Success = true,
@@ -808,7 +834,10 @@ namespace pos_app.Controllers
                     TotalPrevBal = totalPrevBal,
                     TotalCurDebit = totalCurDebit,
                     TotalCurCredit = totalCurCredit,
-                    TotalCurBal = totalCurBal
+                    TotalCurBal = totalCurBal,
+                    CompanyName = compName,
+                    CompanyAddress = compAdr,
+                    PhoneFax = phoneFax
                 });
             }
             catch (Exception ex)

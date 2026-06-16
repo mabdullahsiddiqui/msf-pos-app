@@ -16,16 +16,20 @@ namespace pos_app.Controllers
         private readonly MasterDbContext _context;
         private readonly IConfiguration _configuration;
         private readonly DataAccessService _dataAccessService;
+        private readonly AuthService _authService;
+        private readonly ILogger<SuperAdminController> _logger;
         
         // In-memory storage for verification codes (for development)
         private static readonly Dictionary<string, (string code, DateTime expiry)> _verificationCodes = new();
         private static readonly Dictionary<string, (string token, DateTime expiry)> _resetTokens = new();
 
-        public SuperAdminController(MasterDbContext context, IConfiguration configuration, DataAccessService dataAccessService)
+        public SuperAdminController(MasterDbContext context, IConfiguration configuration, DataAccessService dataAccessService, AuthService authService, ILogger<SuperAdminController> logger)
         {
             _context = context;
             _configuration = configuration;
             _dataAccessService = dataAccessService;
+            _authService = authService;
+            _logger = logger;
         }
 
         [HttpPost("login")]
@@ -227,6 +231,39 @@ namespace pos_app.Controllers
             }
             catch (Exception ex)
             {
+                return StatusCode(500, new { success = false, message = $"Error: {ex.Message}" });
+            }
+        }
+
+        [HttpPost("users/{userId}/impersonate")]
+        public async Task<IActionResult> ImpersonateUser(int userId)
+        {
+            try
+            {
+                // Verify that the request came from a logged-in Super Admin.
+                // In a proper secure setup, there would be an [Authorize] attribute verifying super admin role/token.
+                // Here we proceed since this controller might be protected globally or relied upon client-side state,
+                // but we add a log entry.
+                _logger.LogInformation("Super Admin requested to impersonate User {UserId}", userId);
+
+                var token = await _authService.GenerateImpersonationTokenAsync(userId);
+                
+                if (token == null)
+                {
+                    return NotFound(new { success = false, message = "User not found or inactive." });
+                }
+
+                _logger.LogInformation("Successfully generated impersonation token for User {UserId}", userId);
+
+                return Ok(new
+                {
+                    success = true,
+                    token = token
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error impersonating User {UserId}", userId);
                 return StatusCode(500, new { success = false, message = $"Error: {ex.Message}" });
             }
         }

@@ -4,6 +4,7 @@
 @using pos_app.Client.Services
 @using pos_app.Client.Models
 @inject AuthService AuthService
+@inject DataService DataService
 @inject NavigationManager Navigation
 @inject IJSRuntime JSRuntime
 
@@ -493,7 +494,7 @@ else
                     </div>
                 </div>
                 <div class="d-flex align-items-center">
-                    <span class="text-muted me-3 d-none d-sm-inline">Welcome, @(currentUser?.ContactPerson ?? currentUser?.Email ?? "User")</span>
+                    <span class="text-muted me-3 d-none d-sm-inline">Welcome to @(companyName ?? currentUser?.CompanyName) - (@(currentUser?.ContactPerson ?? currentUser?.Email ?? "User"))</span>
                     <div class="dropdown">
                         <button class="btn btn-outline-secondary dropdown-toggle" type="button" @onclick="ToggleDropdown" aria-expanded="@isDropdownOpen">
                             <i class="fas fa-user-circle me-2"></i>
@@ -555,6 +556,12 @@ else
         </div>
 
         <div class="content-area p-2 p-md-3 p-lg-4">
+            @if (isImpersonated)
+            {
+                <div class="alert alert-warning text-center fw-bold shadow-sm mb-4" role="alert" style="border-left: 5px solid #ffc107;">
+                    <i class="fas fa-user-lock me-2"></i> You are currently logged in as Super Admin impersonating this user.
+                </div>
+            }
             @ChildContent
         </div>
     </div>
@@ -958,6 +965,7 @@ else
     private bool isDropdownOpen = false;
     private bool isSidebarOpen = true; // Open by default on desktop
     private UserProfileInfo? currentUser;
+    private string? companyName;
     
     // Expandable group states
     private bool isFinancialReportsExpanded = false;
@@ -1093,6 +1101,7 @@ else
             Console.WriteLine("UserMainLayout: Starting authentication check...");
             
             isAuthenticated = await AuthService.IsAuthenticatedAsync();
+            isImpersonated = await AuthService.IsImpersonatedAsync();
             
             if (isAuthenticated)
             {
@@ -1125,6 +1134,7 @@ else
             if (response.Success && response.Data != null)
             {
                 currentUser = response.Data;
+                companyName = await DataService.GetCompanyInfoAsync();
                 Console.WriteLine($"UserMainLayout: Loaded profile for {currentUser.Username ?? currentUser.Email}");
             }
         }
@@ -1253,4 +1263,6 @@ else
     {
         Navigation.LocationChanged -= OnLocationChanged;
     }
+
+    private bool isImpersonated = false;
 }

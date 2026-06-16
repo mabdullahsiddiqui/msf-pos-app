@@ -6,6 +6,7 @@
 @inject SuperAdminService SuperAdminService
 @inject NavigationManager Navigation
 @inject AuthenticationStateService AuthState
+@inject IJSRuntime JSRuntime
 
 <PageTitle>Dashboard</PageTitle>
 
@@ -91,6 +92,17 @@
                                                             <i class="fas fa-plug me-1"></i>
                                                         }
                                                         Test DB
+                                                    </button>
+                                                    <button class="btn btn-sm btn-success me-1" @onclick="() => LoginAsUser(user.Id)" disabled="@impersonatingUsers.Contains(user.Id)">
+                                                        @if (impersonatingUsers.Contains(user.Id))
+                                                        {
+                                                            <span class="spinner-border spinner-border-sm me-1" role="status"></span>
+                                                        }
+                                                        else
+                                                        {
+                                                            <i class="fas fa-user-lock me-1"></i>
+                                                        }
+                                                        Login
                                                     </button>
                                                     <button class="btn btn-sm btn-warning me-1" @onclick="() => ShowEditUserModal(user)">
                                                         <i class="fas fa-edit me-1"></i>
@@ -413,6 +425,9 @@
     
     // Test connection loading states
     private HashSet<int> testingConnections = new();
+    
+    // Impersonate loading states
+    private HashSet<int> impersonatingUsers = new();
 
     protected override async Task OnInitializedAsync()
     {
@@ -570,6 +585,41 @@
         finally
         {
             testingConnections.Remove(userId);
+            StateHasChanged();
+        }
+    }
+
+    private async Task LoginAsUser(int userId)
+    {
+        impersonatingUsers.Add(userId);
+        StateHasChanged();
+
+        try
+        {
+            var response = await SuperAdminService.ImpersonateUserAsync(userId);
+
+            if (response.Success && !string.IsNullOrEmpty(response.Token))
+            {
+                // Save the auth token for the user app
+                await JSRuntime.InvokeVoidAsync("localStorage.setItem", "auth_token", response.Token);
+                
+                // Open user dashboard in a new tab
+                await JSRuntime.InvokeVoidAsync("window.open", "/", "_blank");
+                
+                ShowAlert("success", "Successfully logged in as user. User dashboard opened in a new tab.", "Impersonation Successful");
+            }
+            else
+            {
+                ShowAlert("danger", $"❌ Failed to login as user: {response.Message}", "Impersonation Failed");
+            }
+        }
+        catch (Exception ex)
+        {
+            ShowAlert("danger", $"❌ Error during impersonation: {ex.Message}", "Impersonation Error");
+        }
+        finally
+        {
+            impersonatingUsers.Remove(userId);
             StateHasChanged();
         }
     }

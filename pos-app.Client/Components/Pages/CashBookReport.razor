@@ -76,7 +76,7 @@
                                 {
                                     <tr>
                                         <td>
-                                            @if (item.TransDate.HasValue)
+                                            @if (item.TransDate.HasValue && item.TransDate.Value.Year > 1900)
                                             {
                                                 @item.TransDate.Value.ToString("dd/MM/yyyy")
                                             }

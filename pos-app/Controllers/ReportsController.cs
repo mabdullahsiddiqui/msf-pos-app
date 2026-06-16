@@ -180,24 +180,26 @@ namespace pos_app.Controllers
 
                 // Step 1: We'll get all accounts in the next query
 
-                // Step 2: Get all account balances (both Group and Detail) with numeric account codes
                 var allAccountsWithBalancesQuery = $@"
                     SELECT 
-                        a.acc_code as AccCode,
-                        a.acc_name as AccName,
-                        a.acc_type as AccType,
-                        CAST(REPLACE(a.acc_code, '-', '') AS BIGINT) as AccCodeNumeric,
-                        CASE WHEN SUM(ISNULL(dr_amount, 0)) - SUM(ISNULL(cr_amount, 0)) > 0 
-                             THEN SUM(ISNULL(dr_amount, 0)) - SUM(ISNULL(cr_amount, 0)) 
+                        ISNULL(a.acc_code, b.acc_code) as AccCode,
+                        ISNULL(a.acc_name, 'Orphaned Account (' + ISNULL(a.acc_code, b.acc_code) + ')') as AccName,
+                        ISNULL(a.acc_type, 'D') as AccType,
+                        CAST(REPLACE(ISNULL(a.acc_code, b.acc_code), '-', '') AS BIGINT) as AccCodeNumeric,
+                        CASE WHEN SUM(ISNULL(b.dr_amount, 0)) - SUM(ISNULL(b.cr_amount, 0)) > 0 
+                             THEN SUM(ISNULL(b.dr_amount, 0)) - SUM(ISNULL(b.cr_amount, 0)) 
                              ELSE 0 END as Debit,
-                        CASE WHEN SUM(ISNULL(dr_amount, 0)) - SUM(ISNULL(cr_amount, 0)) < 0 
-                             THEN ABS(SUM(ISNULL(dr_amount, 0)) - SUM(ISNULL(cr_amount, 0))) 
+                        CASE WHEN SUM(ISNULL(b.dr_amount, 0)) - SUM(ISNULL(b.cr_amount, 0)) < 0 
+                             THEN ABS(SUM(ISNULL(b.dr_amount, 0)) - SUM(ISNULL(b.cr_amount, 0))) 
                              ELSE 0 END as Credit
                     FROM customer a 
-                    LEFT JOIN view_gjournal b ON a.acc_code = b.acc_code 
-                        AND b.vouch_date <= '{dateString}'
-                    GROUP BY a.acc_code, a.acc_name, a.acc_type
-                    ORDER BY a.acc_code";
+                    FULL JOIN (
+                        SELECT acc_code, dr_amount, cr_amount 
+                        FROM view_gjournal 
+                        WHERE vouch_date <= '{dateString}'
+                    ) b ON a.acc_code = b.acc_code
+                    GROUP BY a.acc_code, b.acc_code, a.acc_name, a.acc_type
+                    ORDER BY ISNULL(a.acc_code, b.acc_code)";
 
                 var allAccountsWithBalances = await _dataAccessService.ExecuteQueryAsync(user, allAccountsWithBalancesQuery);
 
@@ -219,6 +221,7 @@ namespace pos_app.Controllers
 
                 // Loop 1 - Process 3rd Tyre: Sum 4th tyre (Detail) accounts into 3rd tyre groups
                 var thirdTyreAccounts = accountData.Where(a => 
+                    a.AccType == "G" &&
                     a.AccCodeNumeric % 10000 == 0 && // Account code is a multiple of 10,000
                     a.AccCodeNumeric % 1000000 != 0 && // But NOT a multiple of 1,000,000 (so not a 2nd tyre group)
                     a.AccCodeNumeric % 100000000 != 0 // And NOT a multiple of 100,000,000 (so not a 1st tyre group)
@@ -245,6 +248,7 @@ namespace pos_app.Controllers
 
                 // Loop 2 - Process 2nd Tyre: Sum 3rd tyre groups into 2nd tyre groups
                 var secondTyreAccounts = accountData.Where(a => 
+                    a.AccType == "G" &&
                     a.AccCodeNumeric % 1000000 == 0 && 
                     a.AccCodeNumeric % 100000000 != 0).ToList();
 
@@ -269,7 +273,7 @@ namespace pos_app.Controllers
                 }
 
                 // Loop 3 - Process 1st Tyre: Sum 2nd tyre groups into 1st tyre groups
-                var firstTyreAccounts = accountData.Where(a => a.AccCodeNumeric % 100000000 == 0).ToList();
+                var firstTyreAccounts = accountData.Where(a => a.AccType == "G" && a.AccCodeNumeric % 100000000 == 0).ToList();
 
                 for (int i = 0; i < firstTyreAccounts.Count; i++)
                 {
@@ -304,8 +308,8 @@ namespace pos_app.Controllers
                         Credit = a.Credit
                     }).ToList();
 
-                var totalDebit = accountData.Sum(a => a.Debit);
-                var totalCredit = accountData.Sum(a => a.Credit);
+                var totalDebit = accountData.Where(a => a.AccType == "D").Sum(a => a.Debit);
+                var totalCredit = accountData.Where(a => a.AccType == "D").Sum(a => a.Credit);
 
 
                 stopwatch.Stop();
@@ -358,24 +362,26 @@ namespace pos_app.Controllers
                 var reportDate = asOfDate ?? DateTime.Now;
                 var dateString = reportDate.ToString("yyyy/MM/dd");
 
-                // Step 2: Get all account balances (both Group and Detail) with numeric account codes
                 var allAccountsWithBalancesQuery = $@"
                     SELECT 
-                        a.acc_code as AccCode,
-                        a.acc_name as AccName,
-                        a.acc_type as AccType,
-                        CAST(REPLACE(a.acc_code, '-', '') AS BIGINT) as AccCodeNumeric,
-                        CASE WHEN SUM(ISNULL(dr_amount, 0)) - SUM(ISNULL(cr_amount, 0)) > 0 
-                             THEN SUM(ISNULL(dr_amount, 0)) - SUM(ISNULL(cr_amount, 0)) 
+                        ISNULL(a.acc_code, b.acc_code) as AccCode,
+                        ISNULL(a.acc_name, 'Orphaned Account (' + ISNULL(a.acc_code, b.acc_code) + ')') as AccName,
+                        ISNULL(a.acc_type, 'D') as AccType,
+                        CAST(REPLACE(ISNULL(a.acc_code, b.acc_code), '-', '') AS BIGINT) as AccCodeNumeric,
+                        CASE WHEN SUM(ISNULL(b.dr_amount, 0)) - SUM(ISNULL(b.cr_amount, 0)) > 0 
+                             THEN SUM(ISNULL(b.dr_amount, 0)) - SUM(ISNULL(b.cr_amount, 0)) 
                              ELSE 0 END as Debit,
-                        CASE WHEN SUM(ISNULL(dr_amount, 0)) - SUM(ISNULL(cr_amount, 0)) < 0 
-                             THEN ABS(SUM(ISNULL(dr_amount, 0)) - SUM(ISNULL(cr_amount, 0))) 
+                        CASE WHEN SUM(ISNULL(b.dr_amount, 0)) - SUM(ISNULL(b.cr_amount, 0)) < 0 
+                             THEN ABS(SUM(ISNULL(b.dr_amount, 0)) - SUM(ISNULL(b.cr_amount, 0))) 
                              ELSE 0 END as Credit
                     FROM customer a 
-                    LEFT JOIN view_gjournal b ON a.acc_code = b.acc_code 
-                        AND b.vouch_date <= '{dateString}'
-                    GROUP BY a.acc_code, a.acc_name, a.acc_type
-                    ORDER BY a.acc_code";
+                    FULL JOIN (
+                        SELECT acc_code, dr_amount, cr_amount 
+                        FROM view_gjournal 
+                        WHERE vouch_date <= '{dateString}'
+                    ) b ON a.acc_code = b.acc_code
+                    GROUP BY a.acc_code, b.acc_code, a.acc_name, a.acc_type
+                    ORDER BY ISNULL(a.acc_code, b.acc_code)";
 
                 var allAccountsWithBalances = await _dataAccessService.ExecuteQueryAsync(user, allAccountsWithBalancesQuery);
 
@@ -397,6 +403,7 @@ namespace pos_app.Controllers
 
                 // Loop 1 - Process 3rd Tyre: Sum 4th tyre (Detail) accounts into 3rd tyre groups
                 var thirdTyreAccounts = accountData.Where(a => 
+                    a.AccType == "G" &&
                     a.AccCodeNumeric % 10000 == 0 && // Account code is a multiple of 10,000
                     a.AccCodeNumeric % 1000000 != 0 && // But NOT a multiple of 1,000,000 (so not a 2nd tyre group)
                     a.AccCodeNumeric % 100000000 != 0 // And NOT a multiple of 100,000,000 (so not a 1st tyre group)
@@ -423,6 +430,7 @@ namespace pos_app.Controllers
 
                 // Loop 2 - Process 2nd Tyre: Sum 3rd tyre groups into 2nd tyre groups
                 var secondTyreAccounts = accountData.Where(a => 
+                    a.AccType == "G" &&
                     a.AccCodeNumeric % 1000000 == 0 && 
                     a.AccCodeNumeric % 100000000 != 0).ToList();
 
@@ -447,7 +455,7 @@ namespace pos_app.Controllers
                 }
 
                 // Loop 3 - Process 1st Tyre: Sum 2nd tyre groups into 1st tyre groups
-                var firstTyreAccounts = accountData.Where(a => a.AccCodeNumeric % 100000000 == 0).ToList();
+                var firstTyreAccounts = accountData.Where(a => a.AccType == "G" && a.AccCodeNumeric % 100000000 == 0).ToList();
 
                 for (int i = 0; i < firstTyreAccounts.Count; i++)
                 {
@@ -481,8 +489,8 @@ namespace pos_app.Controllers
                         Credit = a.Credit
                     }).ToList();
 
-                var totalDebit = accountData.Sum(a => a.Debit);
-                var totalCredit = accountData.Sum(a => a.Credit);
+                var totalDebit = accountData.Where(a => a.AccType == "D").Sum(a => a.Debit);
+                var totalCredit = accountData.Where(a => a.AccType == "D").Sum(a => a.Credit);
 
                 stopwatch.Stop();
                 return Ok(new TrialBalanceResponse
@@ -777,6 +785,10 @@ namespace pos_app.Controllers
                         CurBalType = row.ContainsKey("CurBalType") ? row["CurBalType"]?.ToString() ?? "" : ""
                     };
 
+                    // Skip accounts where all balances are zero
+                    if (item.PrevBal == 0 && item.CurDebit == 0 && item.CurCredit == 0 && item.CurBal == 0)
+                        continue;
+
                     threeTrialBalanceItems.Add(item);
                     totalPrevBal += item.PrevBal;
                     totalCurDebit += item.CurDebit;
@@ -857,7 +869,7 @@ namespace pos_app.Controllers
 
                     ---- Previous Balance
                     select *  into #ledger from 
-                    (select '000000' as vouch_no,'' as vouch_date,'' as acc_code,'Previous Balance' descript,
+                    (select '000000' as vouch_no, CAST('1900-01-01' AS DATE) as vouch_date,'' as acc_code,'Previous Balance' descript,
                     case when sum(dr_amount)-sum(cr_amount) >0 then abs(sum(dr_amount)-sum(cr_amount)) else 0 end as debit,
                     case when sum(dr_amount)-sum(cr_amount) <0 then abs(sum(dr_amount)-sum(cr_amount)) else 0 end as credit,
                     0 as balance
@@ -866,7 +878,7 @@ namespace pos_app.Controllers
                     union all
                     select  vouch_no,vouch_date,acc_code, descript,dr_amount,cr_amount,0 as balance
                      from view_gjournal where acc_code = @accountId and vouch_Date between @stDate and @enDate 
-                     ) as a order by vouch_Date
+                     ) as a
 
                     SELECT 
                         a.vouch_no,
@@ -876,27 +888,18 @@ namespace pos_app.Controllers
                         a.debit,
                         a.credit,
                         
-                        -- Running Balance
-                        (
-                            SELECT SUM(x.debit - x.credit)
-                            FROM #ledger x
-                            WHERE x.vouch_date <= a.vouch_date
-                              AND x.vouch_no <= a.vouch_no
-                        ) AS balance,
+                        -- Running Balance (window function for correct cumulative sum)
+                        -- Order by date first, then ensure 'Previous Balance' (vouch_no='000000') goes first, then order by debit descending to process debits before credits on the same date, then vouch_no
+                        SUM(a.debit - a.credit) OVER (ORDER BY a.vouch_date, IIF(a.vouch_no = '000000', 0, 1), a.debit DESC, a.vouch_no ROWS UNBOUNDED PRECEDING) AS balance,
                         
                         -- Balance Type
                         IIF(
-                            (
-                                SELECT SUM(x.debit - x.credit)
-                                FROM #ledger x
-                                WHERE x.vouch_date <= a.vouch_date
-                                  AND x.vouch_no <= a.vouch_no
-                            ) >= 0,
+                            SUM(a.debit - a.credit) OVER (ORDER BY a.vouch_date, IIF(a.vouch_no = '000000', 0, 1), a.debit DESC, a.vouch_no ROWS UNBOUNDED PRECEDING) >= 0,
                             'Dr', 'Cr'
                         ) AS bal_type
 
                     FROM #ledger a
-                    ORDER BY a.vouch_date, a.vouch_no;
+                    ORDER BY a.vouch_date, IIF(a.vouch_no = '000000', 0, 1), a.debit DESC, a.vouch_no;
 
                     DROP TABLE #ledger";
 
@@ -911,7 +914,7 @@ namespace pos_app.Controllers
                     var item = new LedgerItem
                     {
                         VouchNo = row.ContainsKey("vouch_no") ? row["vouch_no"]?.ToString() ?? "" : "",
-                        VouchDate = row.ContainsKey("vouch_date") && DateTime.TryParse(row["vouch_date"]?.ToString(), out var date) ? date : DateTime.MinValue,
+                        VouchDate = row.ContainsKey("vouch_date") && DateTime.TryParse(row["vouch_date"]?.ToString(), out var date) && date > new DateTime(1901, 1, 1) ? date : DateTime.MinValue,
                         AccCode = row.ContainsKey("acc_code") ? row["acc_code"]?.ToString() ?? "" : "",
                         Descript = row.ContainsKey("descript") ? row["descript"]?.ToString() ?? "" : "",
                         Debit = row.ContainsKey("debit") && decimal.TryParse(row["debit"]?.ToString(), out var debit) ? debit : 0,
@@ -1108,13 +1111,13 @@ namespace pos_app.Controllers
                     from view_gjournal  where acc_code =(select cash_ac from acc_desc) and vouch_Date <@stDate
                     union all
                     select 1 as sr_no,vouch_Date as trans_Date,acc_code,'' as acc_name, descript, vouch_no,
-                     dr_amount as Receipts,0 as payment
+                    cr_amount as Receipts,0 as payment
                     from view_cashBook  where  vouch_Date between @stDate and @enDate
-                    and dr_amount >0
+                    and cr_amount >0
                     union all 
                     select 2 as sr_no,vouch_Date as trans_Date,acc_code,'' as acc_name, descript, vouch_no,
-                    0 as Receipts,CR_AMOUNT as payment
-                    from view_cashBook  where  vouch_Date between @stDate and @enDate and cr_amount >0
+                    0 as Receipts,dr_amount as payment
+                    from view_cashBook  where  vouch_Date between @stDate and @enDate and dr_amount >0
                     ) as a left join customer b on a.acc_code=b.acc_code
                     order by trans_Date,sr_no";
 
@@ -1147,20 +1150,20 @@ namespace pos_app.Controllers
                             from view_gjournal where acc_code = @cashAc and vouch_Date < @stDate
                             union all
                             select 1 as sr_no, g.vouch_Date as trans_Date, g.acc_code, '' as acc_name, g.descript, g.vouch_no,
-                            g.dr_amount as Receipts, 0 as payment
+                            g.cr_amount as Receipts, 0 as payment
                             from view_gjournal g
                             INNER JOIN CashVouchersInRange cv ON g.vouch_no = cv.vouch_no
                             where g.vouch_Date between @stDate and @enDate
-                            and g.dr_amount > 0 
+                            and g.cr_amount > 0 
                             and g.acc_code <> @cashAc
                             and LEFT(g.vouch_no, 2) <> 'OB'
                             union all 
                             select 2 as sr_no, g.vouch_Date as trans_Date, g.acc_code, '' as acc_name, g.descript, g.vouch_no,
-                            0 as Receipts, g.cr_amount as payment
+                            0 as Receipts, g.dr_amount as payment
                             from view_gjournal g
                             INNER JOIN CashVouchersInRange cv ON g.vouch_no = cv.vouch_no
                             where g.vouch_Date between @stDate and @enDate 
-                            and g.cr_amount > 0
+                            and g.dr_amount > 0
                             and g.acc_code <> @cashAc
                             and LEFT(g.vouch_no, 2) <> 'OB'
                         ) as a left join customer b on a.acc_code=b.acc_code

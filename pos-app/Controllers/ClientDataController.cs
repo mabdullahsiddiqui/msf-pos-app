@@ -298,6 +298,39 @@ namespace pos_app.Controllers
                 return StatusCode(500, "Internal server error");
             }
         }
+
+        // GET: api/clientdata/company-info
+        [HttpGet("company-info")]
+        public async Task<ActionResult> GetCompanyInfo()
+        {
+            try
+            {
+                var userId = GetCurrentUserId();
+                var user = await _authService.GetActiveUserAsync(userId);
+                
+                if (user == null)
+                {
+                    return BadRequest("No active database connection found. Please set up your database connection first.");
+                }
+
+                var query = @"SELECT TOP 1 comp_name as CompanyName FROM head";
+                var result = await _dataAccessService.ExecuteQueryAsync(user, query);
+                var compName = result.FirstOrDefault()?["CompanyName"]?.ToString();
+                
+                if (string.IsNullOrWhiteSpace(compName))
+                {
+                    compName = user.CompanyName;
+                }
+
+                return Ok(new { CompanyName = compName });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting company info");
+                return StatusCode(500, "Internal server error");
+            }
+        }
+
         public async Task<ActionResult> GetCustomers()
         {
             try

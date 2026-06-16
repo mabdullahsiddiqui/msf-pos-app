@@ -299,7 +299,7 @@ namespace pos_app.Services
             }
         }
 
-        private string GenerateJwtToken(User user)
+        private string GenerateJwtToken(User user, bool isImpersonated = false)
         {
             var jwtKey = _configuration["Jwt:Key"] ?? "YourSuperSecretKeyThatIsAtLeast32CharactersLong!";
             var jwtIssuer = _configuration["Jwt:Issuer"] ?? "POS-API";
@@ -308,13 +308,18 @@ namespace pos_app.Services
             var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey));
             var credentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
 
-            var claims = new[]
+            var claims = new List<Claim>
             {
                 new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
                 new Claim(ClaimTypes.Name, user.Username),
                 new Claim(ClaimTypes.GivenName, user.CompanyName),
                 new Claim("ClientName", user.CompanyName)
             };
+
+            if (isImpersonated)
+            {
+                claims.Add(new Claim("is_impersonated", "true"));
+            }
 
             var token = new JwtSecurityToken(
                 issuer: jwtIssuer,
@@ -325,6 +330,14 @@ namespace pos_app.Services
             );
 
             return new JwtSecurityTokenHandler().WriteToken(token);
+        }
+
+        public async Task<string?> GenerateImpersonationTokenAsync(int userId)
+        {
+            var user = await GetActiveUserAsync(userId);
+            if (user == null) return null;
+
+            return GenerateJwtToken(user, isImpersonated: true);
         }
 
         private string GenerateTemporaryPassword()

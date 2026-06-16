@@ -146,6 +146,31 @@ namespace pos_app.Client.Services
             }
         }
 
+        public async Task<ImpersonateResponse> ImpersonateUserAsync(int userId)
+        {
+            try
+            {
+                var client = await CreateAuthedClientAsync();
+                var response = await client.PostAsync($"api/superadmin/users/{userId}/impersonate", null);
+                var responseContent = await response.Content.ReadAsStringAsync();
+
+                var result = JsonSerializer.Deserialize<ImpersonateResponse>(responseContent, new JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true
+                });
+
+                return result ?? new ImpersonateResponse { Success = false, Message = "Failed to impersonate user" };
+            }
+            catch (Exception ex)
+            {
+                return new ImpersonateResponse
+                {
+                    Success = false,
+                    Message = $"Error: {ex.Message}"
+                };
+            }
+        }
+
         public async Task<SuperAdminLoginResponse> UpdateUserAsync(EditUserRequest request)
         {
             try
@@ -444,5 +469,12 @@ namespace pos_app.Client.Services
         public string DatabasePassword { get; set; } = string.Empty;
         public int Port { get; set; } = 1433;
         public string ConnectionName { get; set; } = string.Empty;
+    }
+
+    public class ImpersonateResponse
+    {
+        public bool Success { get; set; }
+        public string Message { get; set; } = string.Empty;
+        public string Token { get; set; } = string.Empty;
     }
 }

@@ -1,0 +1,1021 @@
+@using Microsoft.AspNetCore.Components
+@using pos_app.Client.Services
+@using pos_app.Client.Models
+@inject DataService DataService
+
+@if (IsVisible)
+{
+    <div class="modal fade show d-block account-chart-modal-backdrop" tabindex="-1" role="dialog" @onclick="CloseModal">
+        <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable" role="document" @onclick:stopPropagation>
+            <div class="modal-content shadow-lg border-0 chart-modal-content">
+                
+                <!-- Modal Header -->
+                <div class="modal-header d-flex align-items-center border-bottom-0 pb-0">
+                    <div class="d-flex align-items-center gap-2">
+                        <div class="icon-box bg-primary-subtle text-primary rounded-3 p-2 d-flex align-items-center justify-content-center">
+                            <i class="fas fa-sitemap fs-5"></i>
+                        </div>
+                        <div>
+                            <h5 class="modal-title fw-bold text-dark m-0">@Title</h5>
+                            <small class="text-muted">Browse and select account hierarchy</small>
+                        </div>
+                    </div>
+                    <button type="button" class="btn-close shadow-none btn-close-custom" aria-label="Close" @onclick="CloseModal"></button>
+                </div>
+
+                <!-- Modal Body -->
+                <div class="modal-body pt-3">
+                    <!-- Search Controls & Toolbar -->
+                    <div class="row g-2 mb-3">
+                        <div class="col">
+                            <div class="position-relative search-input-wrapper">
+                                <span class="position-absolute start-0 top-50 translate-middle-y ms-3 text-muted">
+                                    <i class="fas fa-search"></i>
+                                </span>
+                                <input type="text" 
+                                       class="form-control rounded-pill ps-5 pe-4 search-input shadow-none" 
+                                       placeholder="Search code or account name..." 
+                                       value="@searchTerm" 
+                                       @oninput="OnSearchChanged" />
+                                @if (!string.IsNullOrEmpty(searchTerm))
+                                {
+                                    <button type="button" 
+                                            class="btn btn-sm btn-clear-search position-absolute end-0 top-50 translate-middle-y me-3 p-0" 
+                                            @onclick="ClearSearch">
+                                        <i class="fas fa-times-circle text-muted hover-danger"></i>
+                                    </button>
+                                }
+                            </div>
+                        </div>
+                        <div class="col-auto d-flex align-items-center gap-1">
+                            <button type="button" class="btn btn-outline-secondary btn-toolbar-action shadow-none" @onclick="ExpandAll" title="Expand All">
+                                <i class="fas fa-expand-arrows-alt"></i> <span class="d-none d-sm-inline ms-1">Expand All</span>
+                            </button>
+                            <button type="button" class="btn btn-outline-secondary btn-toolbar-action shadow-none" @onclick="CollapseAll" title="Collapse All">
+                                <i class="fas fa-compress-arrows-alt"></i> <span class="d-none d-sm-inline ms-1">Collapse All</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Tree Viewport -->
+                    <div class="tree-viewport border rounded-3 bg-light p-3">
+                        @if (isLoading)
+                        {
+                            <div class="d-flex flex-column align-items-center justify-content-center py-5">
+                                <div class="spinner-border text-primary mb-3" role="status">
+                                    <span class="visually-hidden">Loading...</span>
+                                </div>
+                                <span class="text-muted">Loading chart data...</span>
+                            </div>
+                        }
+                        else if (!rootNodes.Any(r => r.IsVisible))
+                        {
+                            <div class="text-center py-5 text-muted">
+                                <i class="fas fa-search-minus fs-1 mb-3 text-opacity-25"></i>
+                                <p class="m-0">No matching accounts found in the chart</p>
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="tree-container">
+                                @{
+                                    RenderFragment<AccountNode> renderNode = null;
+                                     renderNode = (node) => 
+                                         @<li class="tree-node @(IsNodeSelected(node) ? "node-selected-item" : "") @(IsNodeInRange(node) ? "node-in-range" : "")" @key="node.CleanCode">
+                                             <div class="node-row d-flex align-items-center py-1 px-2 rounded-2 @(IsNodeDisabled(node) ? "row-disabled" : "")" 
+                                                  @onclick="() => { if (node.Children.Any(c => c.IsVisible)) ToggleNode(node); }"
+                                                  @ondblclick="() => { if (!IsNodeDisabled(node) && !node.Children.Any(c => c.IsVisible)) HandleDoubleClick(node); }">
+                                                 
+                                                 <!-- Checkbox Selection -->
+                                                 <div class="checkbox-container me-2" @onclick="() => { if (!IsNodeDisabled(node)) SelectNode(node); }" @onclick:stopPropagation>
+                                                     @if (IsNodeSelected(node))
+                                                     {
+                                                         <i class="fas fa-check-square text-primary fs-5 cursor-pointer"></i>
+                                                     }
+                                                     else if (IsNodeInRange(node))
+                                                     {
+                                                         <i class="fas fa-minus-square text-primary-subtle text-primary fs-5 cursor-pointer"></i>
+                                                     }
+                                                     else
+                                                     {
+                                                         <i class="far fa-square text-muted fs-5 cursor-pointer @(IsNodeDisabled(node) ? "row-disabled" : "")"></i>
+                                                     }
+                                                 </div>
+
+                                                 <!-- Icon -->
+                                                 <div class="node-icon me-2">
+                                                     @if (node.IsVirtual)
+                                                     {
+                                                         <i class="fas fa-folder-minus text-secondary text-opacity-50"></i>
+                                                     }
+                                                     else if (node.Level == 1)
+                                                     {
+                                                         <i class="fas fa-folder text-warning fs-5"></i>
+                                                     }
+                                                     else if (node.Level == 2)
+                                                     {
+                                                         <i class="fas fa-folder-open text-primary"></i>
+                                                     }
+                                                     else if (node.Level == 3)
+                                                     {
+                                                         <i class="fas fa-file-invoice text-info"></i>
+                                                     }
+                                                     else
+                                                     {
+                                                         <i class="fas fa-user-circle text-secondary"></i>
+                                                     }
+                                                 </div>
+ 
+                                                 <!-- Code & Name -->
+                                                 <div class="node-label text-truncate flex-grow-1">
+                                                     <span class="font-monospace fw-semibold text-secondary me-2">@HighlightText(node.Code, searchTerm)</span>
+                                                     <span class="text-dark">@HighlightText(node.Name, searchTerm)</span>
+                                                 </div>
+ 
+                                                 <!-- Virtual Badge -->
+                                                 @if (node.IsVirtual)
+                                                 {
+                                                     <span class="badge bg-secondary-subtle text-secondary border border-secondary-subtle py-1 px-2 ms-2 node-virtual-tag">Virtual</span>
+                                                 }
+
+                                                 <!-- Expand/Collapse Indicator at the end (+/-) -->
+                                                 @if (node.Children.Any(c => c.IsVisible))
+                                                 {
+                                                     <div class="expand-indicator ms-2 text-muted fw-bold">
+                                                         @(node.IsExpanded ? "-" : "+")
+                                                     </div>
+                                                 }
+                                             </div>
+ 
+                                             @if (node.Children.Any(c => c.IsVisible) && node.IsExpanded)
+                                             {
+                                                 <ul class="tree-node-children list-unstyled ps-4 ms-2 border-start border-dashed">
+                                                     @foreach (var child in node.Children)
+                                                     {
+                                                         @if (child.IsVisible)
+                                                         {
+                                                             @renderNode(child)
+                                                         }
+                                                     }
+                                                 </ul>
+                                             }
+                                         </li>;
+                                }
+
+                                <ul class="tree-root list-unstyled m-0">
+                                    @foreach (var root in rootNodes)
+                                    {
+                                        @if (root.IsVisible)
+                                        {
+                                            @renderNode(root)
+                                        }
+                                    }
+                                </ul>
+                            </div>
+                        }
+                    </div>
+                </div>
+
+                <!-- Account Detail Panel -->
+                <div class="modal-footer d-block bg-light border-top-0 pt-0 px-4 pb-4">
+                    @if (IsRangeMode)
+                    {
+                        <!-- Range Selection Detail Card -->
+                        <div class="detail-card border rounded-3 p-3 bg-white mb-3">
+                            <h6 class="fw-bold text-dark border-bottom pb-2 mb-2 d-flex align-items-center justify-content-between">
+                                <span class="d-flex align-items-center gap-2">
+                                    <i class="fas fa-info-circle text-primary"></i> Selected Account Range
+                                </span>
+                                @if (fromNode != null || uptoNode != null)
+                                {
+                                    <button type="button" class="btn btn-sm btn-outline-danger border-0 py-0 px-2 rounded" @onclick="ClearRange">
+                                        <i class="fas fa-trash-alt me-1"></i> Clear Selections
+                                    </button>
+                                }
+                            </h6>
+                            <div class="row g-2">
+                                <div class="col-12 col-md-6">
+                                    <div class="range-target-box p-2 rounded-2 border clickable @(activeTarget == "from" ? "border-primary bg-primary-subtle bg-opacity-10 active-range-target" : "bg-light")" 
+                                         @onclick='() => activeTarget = "from"'>
+                                        <span class="text-muted d-block small-label">From Account (Click to set)</span>
+                                        @if (fromNode != null)
+                                        {
+                                            <div class="d-flex align-items-center justify-content-between">
+                                                <div>
+                                                    <span class="font-monospace fw-bold text-dark me-1">@fromNode.Code</span>
+                                                    <small class="text-secondary d-block text-truncate" style="max-width: 250px;">@fromNode.Name</small>
+                                                </div>
+                                                <span class="badge bg-primary-subtle text-primary border border-primary-subtle">L@(fromNode.Level)</span>
+                                            </div>
+                                        }
+                                        else
+                                        {
+                                            <span class="text-muted font-italic">Not selected</span>
+                                        }
+                                    </div>
+                                </div>
+                                <div class="col-12 col-md-6">
+                                    <div class="range-target-box p-2 rounded-2 border clickable @(activeTarget == "upto" ? "border-primary bg-primary-subtle bg-opacity-10 active-range-target" : "bg-light")" 
+                                         @onclick='() => activeTarget = "upto"'>
+                                        <span class="text-muted d-block small-label">Upto Account (Click to set)</span>
+                                        @if (uptoNode != null)
+                                        {
+                                            <div class="d-flex align-items-center justify-content-between">
+                                                <div>
+                                                    <span class="font-monospace fw-bold text-dark me-1">@GetPaddedUptoCode(uptoNode.Code, uptoNode.Level)</span>
+                                                    <small class="text-secondary d-block text-truncate" style="max-width: 250px;">@uptoNode.Name</small>
+                                                </div>
+                                                <span class="badge bg-primary-subtle text-primary border border-primary-subtle">L@(uptoNode.Level)</span>
+                                            </div>
+                                        }
+                                        else
+                                        {
+                                            <span class="text-muted font-italic">Not selected</span>
+                                        }
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="text-center mt-2 small text-muted">
+                                @if (fromNode != null || uptoNode != null)
+                                {
+                                    var currentLevel = fromNode?.Level ?? uptoNode?.Level ?? 0;
+                                    <span>Selecting range at <strong>Level @currentLevel</strong>. Auto-swapping is enabled.</span>
+                                }
+                                else
+                                {
+                                    <span>Select two accounts of the same level (L1, L2, or L3) to define a range.</span>
+                                }
+                            </div>
+                        </div>
+                    }
+                    else
+                    {
+                        <!-- Single Selection Detail Card -->
+                        <div class="detail-card border rounded-3 p-3 bg-white mb-3">
+                            <h6 class="fw-bold text-dark border-bottom pb-2 mb-2 d-flex align-items-center gap-2">
+                                <i class="fas fa-info-circle text-primary"></i> Selected Account Details
+                            </h6>
+                            @if (selectedNode != null)
+                            {
+                                <div class="row g-3">
+                                    <div class="col-12 col-md-4">
+                                        <div class="detail-field">
+                                            <span class="text-muted d-block small-label">Account Code</span>
+                                            <span class="font-monospace fw-bold text-dark fs-5">@selectedNode.Code</span>
+                                        </div>
+                                    </div>
+                                    <div class="col-12 col-md-5">
+                                        <div class="detail-field">
+                                            <span class="text-muted d-block small-label">Account Name</span>
+                                            <span class="fw-semibold text-dark fs-5">@selectedNode.Name</span>
+                                        </div>
+                                    </div>
+                                    <div class="col-12 col-md-3">
+                                        <div class="detail-field">
+                                            <span class="text-muted d-block small-label">Account Level</span>
+                                            <div>
+                                                @if (selectedNode.Level == 1)
+                                                {
+                                                    <span class="badge bg-primary-subtle text-primary border border-primary-subtle py-1 px-2">L1 - Class</span>
+                                                }
+                                                else if (selectedNode.Level == 2)
+                                                {
+                                                    <span class="badge bg-success-subtle text-success border border-success-subtle py-1 px-2">L2 - Control</span>
+                                                }
+                                                else if (selectedNode.Level == 3)
+                                                {
+                                                    <span class="badge bg-info-subtle text-info border border-info-subtle py-1 px-2">L3 - Sub-group</span>
+                                                }
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="text-center py-2 text-muted">
+                                    <i class="fas fa-hand-pointer me-1 animate-bounce"></i> Select an account from the tree structure above to view details
+                                </div>
+                            }
+                        </div>
+                    }
+
+                    <!-- Modal Actions -->
+                    <div class="d-flex justify-content-end gap-2">
+                        <button type="button" class="btn btn-outline-secondary px-4 rounded-pill shadow-none" @onclick="CloseModal">Close</button>
+                        <button type="button" class="btn btn-primary px-4 rounded-pill shadow-none d-flex align-items-center gap-2" 
+                                disabled="@(IsRangeMode ? (fromNode == null && uptoNode == null) : (selectedNode == null))" 
+                                @onclick="SelectAndClose">
+                            <i class="fas fa-check-circle"></i> Confirm Selection
+                        </button>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+}
+
+<style>
+    /* Backdrop & Animations */
+    .account-chart-modal-backdrop {
+        background-color: rgba(15, 23, 42, 0.45);
+        backdrop-filter: blur(8px);
+        z-index: 1050;
+        transition: opacity 0.15s linear;
+    }
+
+    .chart-modal-content {
+        border-radius: 1.25rem;
+        animation: modalEntrance 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+        overflow: hidden;
+    }
+
+    @@keyframes modalEntrance {
+        from {
+            transform: scale(0.92) translateY(20px);
+            opacity: 0;
+        }
+        to {
+            transform: scale(1) translateY(0);
+            opacity: 1;
+        }
+    }
+
+    /* Search wrapper */
+    .search-input-wrapper .search-input {
+        border: 1.5px solid #dee2e6;
+        height: 42px;
+        font-size: 0.95rem;
+        transition: all 0.2s ease-in-out;
+    }
+
+    .search-input-wrapper .search-input:focus {
+        border-color: #007bff;
+        box-shadow: 0 0 0 4px rgba(0, 123, 255, 0.12);
+        background-color: #fff;
+    }
+
+    .btn-clear-search {
+        background: none;
+        border: none;
+    }
+
+    .hover-danger:hover {
+        color: #dc3545 !important;
+    }
+
+    .btn-toolbar-action {
+        height: 42px;
+        border: 1.5px solid #dee2e6;
+        border-radius: 30px;
+        font-size: 0.875rem;
+        font-weight: 500;
+        color: #495057;
+        background-color: #fff;
+        padding: 0 15px;
+        transition: all 0.15s ease-in-out;
+    }
+
+    .btn-toolbar-action:hover {
+        background-color: #f8f9fa;
+        color: #212529;
+        border-color: #ced4da;
+    }
+
+    .btn-close-custom {
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        background-color: #f8f9fa;
+        padding: 8px;
+        transition: all 0.2s;
+    }
+
+    .btn-close-custom:hover {
+        background-color: #e9ecef;
+        transform: rotate(90deg);
+    }
+
+    /* Tree Styling */
+    .tree-viewport {
+        max-height: 420px;
+        overflow-y: auto;
+        border: 1.5px solid #e9ecef !important;
+    }
+
+    .tree-container {
+        user-select: none;
+    }
+
+    .tree-node-children {
+        position: relative;
+    }
+
+    .border-start.border-dashed {
+        border-left-style: dashed !important;
+        border-left-color: #dee2e6 !important;
+    }
+
+    .node-row {
+        cursor: pointer;
+        transition: all 0.15s;
+    }
+
+    .node-row:hover {
+        background-color: rgba(0, 123, 255, 0.05);
+    }
+
+    .node-selected-item > .node-row {
+        background-color: rgba(0, 123, 255, 0.08) !important;
+        border-left: 3px solid #007bff;
+        font-weight: 600;
+    }
+
+    /* Range Highlighting */
+    .node-in-range > .node-row {
+        background-color: rgba(0, 123, 255, 0.04) !important;
+        border-left: 3px dashed #007bff;
+    }
+
+    .checkbox-container {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 24px;
+        height: 24px;
+        transition: transform 0.1s ease;
+    }
+
+    .checkbox-container:hover {
+        transform: scale(1.1);
+    }
+
+    .expand-indicator {
+        font-family: monospace;
+        font-size: 1.2rem;
+        line-height: 1;
+        width: 20px;
+        height: 20px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 4px;
+        transition: all 0.2s;
+    }
+
+    .node-row:hover .expand-indicator {
+        background-color: rgba(0, 0, 0, 0.05);
+        color: #212529 !important;
+    }
+
+    .row-disabled {
+        opacity: 0.35;
+        cursor: not-allowed !important;
+    }
+
+    .range-target-box {
+        cursor: pointer;
+        transition: all 0.2s;
+        border-width: 1.5px !important;
+    }
+
+    .active-range-target {
+        box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.15);
+    }
+
+    .btn-toggle {
+        width: 24px;
+        height: 24px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: transform 0.2s ease;
+    }
+
+    .btn-toggle.expanded {
+        transform: rotate(90deg);
+    }
+
+    .toggle-space {
+        width: 28px;
+        height: 28px;
+    }
+
+    .node-icon {
+        width: 20px;
+        text-align: center;
+    }
+
+    .small-label {
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-bottom: 2px;
+    }
+
+    .animate-bounce {
+        animation: bounce 1.5s infinite;
+    }
+
+    @@keyframes bounce {
+        0%, 100% {
+            transform: translateY(0);
+        }
+        50% {
+            transform: translateY(-3px);
+        }
+    }
+
+    .node-virtual-tag {
+        font-size: 0.7rem;
+        font-weight: 600;
+    }
+</style>
+
+@code {
+    [Parameter] public string Title { get; set; } = "Account Chart";
+    [Parameter] public bool IsVisible { get; set; }
+    [Parameter] public EventCallback<bool> IsVisibleChanged { get; set; }
+    [Parameter] public EventCallback<ClientCustomer> OnAccountSelected { get; set; }
+    [Parameter] public bool IsRangeMode { get; set; } = false;
+
+    private List<AccountNode> rootNodes = new();
+    private Dictionary<string, AccountNode> allNodesMap = new();
+    private string searchTerm = "";
+    private bool isLoading = false;
+
+    // Single Selection Mode
+    private AccountNode? selectedNode = null;
+
+    // Range Selection Mode
+    private AccountNode? fromNode = null;
+    private AccountNode? uptoNode = null;
+    private string activeTarget = "from"; // "from" or "upto"
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (IsVisible && !rootNodes.Any())
+        {
+            await LoadChartData();
+        }
+    }
+
+    private async Task LoadChartData()
+    {
+        isLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            var rawAccounts = await DataService.GetCustomersAsync();
+            BuildTree(rawAccounts);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading chart modal data: {ex.Message}");
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
+        }
+    }
+
+    private void BuildTree(List<ClientCustomer> rawAccounts)
+    {
+        rootNodes.Clear();
+        allNodesMap.Clear();
+        selectedNode = null;
+        fromNode = null;
+        uptoNode = null;
+        activeTarget = "from";
+
+        // 1. Create nodes for Group accounts ONLY (AccType == "G" and Level <= 3)
+        var filteredList = rawAccounts.Where(a => 
+            a.AccType.Trim().ToUpper() == "G"
+        ).ToList();
+
+        foreach (var acc in filteredList)
+        {
+            var cleanCode = acc.AccCode.Replace("-", "").Trim();
+            if (cleanCode.Length < 9) cleanCode = cleanCode.PadRight(9, '0');
+            
+            var level = GetAccountLevel(cleanCode);
+            // Hide Level 4 (detail accounts) completely
+            if (level == 4)
+            {
+                continue;
+            }
+
+            var node = new AccountNode
+            {
+                Account = acc,
+                Code = acc.AccCode.Trim(),
+                CleanCode = cleanCode,
+                Name = acc.AccName.Trim(),
+                Level = level,
+                IsExpanded = false,
+                IsVisible = true
+            };
+            allNodesMap[cleanCode] = node;
+        }
+
+        // 2. Ensure all parent ancestors exist in dictionary (creates virtual nodes if missing)
+        var codesToProcess = allNodesMap.Keys.ToList();
+        foreach (var cleanCode in codesToProcess)
+        {
+            EnsureAncestorsExist(cleanCode);
+        }
+
+        // 3. Establish parent-child linking
+        foreach (var node in allNodesMap.Values)
+        {
+            if (node.Level == 1)
+            {
+                if (!rootNodes.Contains(node))
+                {
+                    rootNodes.Add(node);
+                }
+            }
+            else
+            {
+                var parentClean = GetParentCleanCode(node.CleanCode, node.Level);
+                if (parentClean != null && allNodesMap.TryGetValue(parentClean, out var parentNode))
+                {
+                    node.Parent = parentNode;
+                    if (!parentNode.Children.Any(c => c.CleanCode == node.CleanCode))
+                    {
+                        parentNode.Children.Add(node);
+                    }
+                }
+            }
+        }
+
+        // 4. Sort alphabetically by code
+        SortTree(rootNodes);
+    }
+
+    private void EnsureAncestorsExist(string cleanCode)
+    {
+        var node = allNodesMap[cleanCode];
+        if (node.Level == 1) return;
+
+        var parentClean = GetParentCleanCode(cleanCode, node.Level);
+        if (parentClean == null) return;
+
+        if (!allNodesMap.ContainsKey(parentClean))
+        {
+            var parentLevel = node.Level - 1;
+            var formattedParent = FormatCodeWithDashes(parentClean);
+            var virtualAcc = new ClientCustomer
+            {
+                AccCode = formattedParent,
+                AccName = $"Group {formattedParent}",
+                AccType = "G"
+            };
+
+            var parentNode = new AccountNode
+            {
+                Account = virtualAcc,
+                Code = formattedParent,
+                CleanCode = parentClean,
+                Name = virtualAcc.AccName,
+                Level = parentLevel,
+                IsExpanded = false,
+                IsVisible = true,
+                IsVirtual = true
+            };
+            allNodesMap[parentClean] = parentNode;
+
+            // Recurse to make sure parent's parent exists
+            EnsureAncestorsExist(parentClean);
+        }
+    }
+
+    private int GetAccountLevel(string cleanCode)
+    {
+        if (long.TryParse(cleanCode, out var num))
+        {
+            if (num % 100000000 == 0) return 1;
+            if (num % 1000000 == 0) return 2;
+            if (num % 10000 == 0) return 3;
+        }
+        return 4;
+    }
+
+    private string? GetParentCleanCode(string cleanCode, int level)
+    {
+        if (level == 1) return null;
+        if (level == 2) return cleanCode[0] + "00000000";
+        if (level == 3) return cleanCode.Substring(0, 3) + "000000";
+        if (level == 4) return cleanCode.Substring(0, 5) + "0000";
+        return null;
+    }
+
+    private string FormatCodeWithDashes(string digits)
+    {
+        if (digits.Length < 9) digits = digits.PadRight(9, '0');
+        return $"{digits[0]}-{digits.Substring(1, 2)}-{digits.Substring(3, 2)}-{digits.Substring(5, 4)}";
+    }
+
+    private void SortTree(List<AccountNode> nodes)
+    {
+        nodes.Sort((a, b) => string.Compare(a.Code, b.Code, StringComparison.Ordinal));
+        foreach (var node in nodes)
+        {
+            SortTree(node.Children);
+        }
+    }
+
+    private void ToggleNode(AccountNode node)
+    {
+        node.IsExpanded = !node.IsExpanded;
+    }
+
+    private void SelectNode(AccountNode node)
+    {
+        if (IsRangeMode)
+        {
+            if (activeTarget == "from")
+            {
+                fromNode = node;
+                
+                // If level changed, reset the uptoNode
+                if (uptoNode != null && uptoNode.Level != node.Level)
+                {
+                    uptoNode = null;
+                }
+                
+                // Automatically switch target to "upto" for next selection
+                activeTarget = "upto";
+            }
+            else
+            {
+                // Must be same level
+                if (fromNode != null && fromNode.Level != node.Level)
+                {
+                    fromNode = node;
+                    uptoNode = null;
+                    activeTarget = "upto";
+                }
+                else
+                {
+                    uptoNode = node;
+                }
+            }
+
+            // Swap if fromNode is after uptoNode alphabetically
+            if (fromNode != null && uptoNode != null && string.Compare(fromNode.Code, uptoNode.Code, StringComparison.Ordinal) > 0)
+            {
+                var temp = fromNode;
+                fromNode = uptoNode;
+                uptoNode = temp;
+            }
+        }
+        else
+        {
+            if (selectedNode != null)
+            {
+                selectedNode.IsSelected = false;
+            }
+            
+            node.IsSelected = true;
+            selectedNode = node;
+        }
+    }
+
+    private void HandleDoubleClick(AccountNode node)
+    {
+        SelectNode(node);
+        if (!IsRangeMode || (fromNode != null && uptoNode != null))
+        {
+            SelectAndClose();
+        }
+    }
+
+    private void ClearRange()
+    {
+        fromNode = null;
+        uptoNode = null;
+        activeTarget = "from";
+        StateHasChanged();
+    }
+
+    private bool IsNodeSelected(AccountNode node)
+    {
+        if (IsRangeMode)
+        {
+            return fromNode == node || uptoNode == node;
+        }
+        return selectedNode == node;
+    }
+
+    private bool IsNodeInRange(AccountNode node)
+    {
+        if (!IsRangeMode || fromNode == null || uptoNode == null)
+            return false;
+
+        if (node.Level != fromNode.Level)
+            return false;
+
+        return string.Compare(node.Code, fromNode.Code, StringComparison.Ordinal) >= 0 && 
+               string.Compare(node.Code, uptoNode.Code, StringComparison.Ordinal) <= 0;
+    }
+
+    private bool IsNodeDisabled(AccountNode node)
+    {
+        if (!IsRangeMode) return false;
+
+        if (activeTarget == "from")
+        {
+            if (uptoNode != null && node.Level != uptoNode.Level)
+                return true;
+        }
+        else if (activeTarget == "upto")
+        {
+            if (fromNode != null && node.Level != fromNode.Level)
+                return true;
+        }
+
+        return false;
+    }
+
+    private void OnSearchChanged(ChangeEventArgs e)
+    {
+        searchTerm = e.Value?.ToString() ?? "";
+        ApplySearch(searchTerm);
+    }
+
+    private void ClearSearch()
+    {
+        searchTerm = "";
+        ApplySearch(searchTerm);
+    }
+
+    private void ApplySearch(string search)
+    {
+        if (string.IsNullOrWhiteSpace(search))
+        {
+            foreach (var node in allNodesMap.Values)
+            {
+                node.IsVisible = true;
+            }
+            return;
+        }
+
+        var cleanSearch = search.Trim().ToLower();
+
+        // 1. Initially hide and collapse everything
+        foreach (var node in allNodesMap.Values)
+        {
+            node.IsVisible = false;
+            node.IsExpanded = false;
+        }
+
+        // 2. Identify matches and propagate visibility upwards
+        foreach (var node in allNodesMap.Values)
+        {
+            if (node.Code.ToLower().Contains(cleanSearch) || node.Name.ToLower().Contains(cleanSearch))
+            {
+                node.IsVisible = true;
+                
+                // Expand and show all ancestors
+                var parent = node.Parent;
+                while (parent != null)
+                {
+                    parent.IsVisible = true;
+                    parent.IsExpanded = true;
+                    parent = parent.Parent;
+                }
+            }
+        }
+    }
+
+    private void ExpandAll()
+    {
+        foreach (var node in allNodesMap.Values)
+        {
+            if (node.Children.Any(c => c.IsVisible))
+            {
+                node.IsExpanded = true;
+            }
+        }
+    }
+
+    private void CollapseAll()
+    {
+        foreach (var node in allNodesMap.Values)
+        {
+            node.IsExpanded = false;
+        }
+    }
+
+    private void CloseModal()
+    {
+        IsVisible = false;
+        IsVisibleChanged.InvokeAsync(false);
+    }
+
+    private void SelectAndClose()
+    {
+        if (IsRangeMode)
+        {
+            if (fromNode != null && uptoNode != null)
+            {
+                AccountSelectionState.SelectFrom(fromNode.Code, fromNode.Level);
+                AccountSelectionState.SelectUpto(GetPaddedUptoCode(uptoNode.Code, uptoNode.Level), uptoNode.Level);
+                CloseModal();
+            }
+            else if (fromNode != null)
+            {
+                AccountSelectionState.SelectFrom(fromNode.Code, fromNode.Level);
+                AccountSelectionState.SelectUpto(GetPaddedUptoCode(fromNode.Code, fromNode.Level), fromNode.Level);
+                CloseModal();
+            }
+            else if (uptoNode != null)
+            {
+                AccountSelectionState.SelectFrom(uptoNode.Code, uptoNode.Level);
+                AccountSelectionState.SelectUpto(GetPaddedUptoCode(uptoNode.Code, uptoNode.Level), uptoNode.Level);
+                CloseModal();
+            }
+        }
+        else
+        {
+            if (selectedNode != null)
+            {
+                OnAccountSelected.InvokeAsync(selectedNode.Account);
+                CloseModal();
+            }
+        }
+    }
+
+    private MarkupString HighlightText(string text, string search)
+    {
+        if (string.IsNullOrWhiteSpace(search))
+        {
+            return new MarkupString(System.Net.WebUtility.HtmlEncode(text));
+        }
+
+        var escapedText = System.Net.WebUtility.HtmlEncode(text);
+        var escapedSearch = System.Net.WebUtility.HtmlEncode(search);
+        
+        var index = escapedText.IndexOf(escapedSearch, StringComparison.OrdinalIgnoreCase);
+        if (index < 0)
+        {
+            return new MarkupString(escapedText);
+        }
+
+        // Replace all occurrences while preserving original casing
+        var highlighted = System.Text.RegularExpressions.Regex.Replace(
+            escapedText,
+            System.Text.RegularExpressions.Regex.Escape(escapedSearch),
+            match => $"<mark class=\"bg-warning px-1 py-0 rounded-1 text-dark\">{match.Value}</mark>",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase
+        );
+
+        return new MarkupString(highlighted);
+    }
+
+    private string GetPaddedUptoCode(string code, int level)
+    {
+        var cleanCode = code.Replace("-", "").Trim();
+        if (cleanCode.Length < 9) cleanCode = cleanCode.PadRight(9, '0');
+
+        if (level == 1) // Level 1 (e.g. 1-00-00-0000 -> 1-99-99-9999)
+        {
+            var prefix = cleanCode.Substring(0, 1);
+            return $"{prefix}-99-99-9999";
+        }
+        else if (level == 2) // Level 2 (e.g. 1-03-00-0000 -> 1-03-99-9999)
+        {
+            var prefix = cleanCode.Substring(0, 1);
+            var sub = cleanCode.Substring(1, 2);
+            return $"{prefix}-{sub}-99-9999";
+        }
+        else if (level == 3) // Level 3 (e.g. 1-03-02-0000 -> 1-03-02-9999)
+        {
+            var prefix = cleanCode.Substring(0, 1);
+            var sub = cleanCode.Substring(1, 2);
+            var subsub = cleanCode.Substring(3, 2);
+            return $"{prefix}-{sub}-{subsub}-9999";
+        }
+
+        return code;
+    }
+
+    public class AccountNode
+    {
+        public ClientCustomer Account { get; set; } = null!;
+        public string Code { get; set; } = string.Empty;
+        public string CleanCode { get; set; } = string.Empty;
+        public string Name { get; set; } = string.Empty;
+        public int Level { get; set; }
+        public bool IsExpanded { get; set; }
+        public bool IsVisible { get; set; }
+        public bool IsSelected { get; set; }
+        public bool IsVirtual { get; set; }
+        public List<AccountNode> Children { get; set; } = new();
+        public AccountNode? Parent { get; set; }
+    }
+}

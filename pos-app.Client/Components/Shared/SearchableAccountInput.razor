@@ -2,30 +2,47 @@
 @using pos_app.Client.Services
 @using pos_app.Client.Models
 @inject DataService DataService
+@implements IDisposable
 
 <div class="@ColumnClass">
     <label for="@Id" class="form-label">@Label</label>
     <div class="position-relative account-search-container">
-        <input type="text" 
-               id="@Id"
-               class="form-control pe-5 @(AdditionalClass ?? "")" 
-               placeholder="@Placeholder" 
-               value="@accountSearchTerm"
-               disabled="@IsDisabled"
-               @oninput="OnAccountSearchChanged"
-               @onfocus="@(() => ShowAccountDropdown = true)"
-               @onblur="HideAccountDropdown" />
-        
-        @if (!string.IsNullOrEmpty(accountSearchTerm))
-        {
-            <button type="button" 
-                    class="btn btn-sm position-absolute top-50 end-0 translate-middle-y me-2 p-0 clear-search-btn" 
-                    style="background: none; border: none; color: #6c757d; z-index: 10;"
-                    @onclick="ClearSearch"
-                    title="Clear search">
-                <i class="fas fa-times"></i>
-            </button>
-        }
+        <div class="input-group">
+            <input type="text" 
+                   id="@Id"
+                   class="form-control @(AdditionalClass ?? "")" 
+                   placeholder="@Placeholder" 
+                   value="@accountSearchTerm"
+                   disabled="@IsDisabled"
+                   readonly="@(!HideBrowseButton)"
+                   @oninput="OnAccountSearchChanged"
+                   @onfocus="@(() => { if (HideBrowseButton) ShowAccountDropdown = true; })"
+                   @onblur="HideAccountDropdown"
+                   style="--search-input-padding: @(HideBrowseButton ? "35px" : "75px"); cursor: @(HideBrowseButton ? "text" : "pointer"); background-color: @(HideBrowseButton ? "#fff" : "#f8f9fa");"
+                   @onclick="@(() => { if (!HideBrowseButton) OpenChartModal(); })" />
+            
+            @if (!string.IsNullOrEmpty(accountSearchTerm))
+            {
+                <button type="button" 
+                        class="btn btn-sm position-absolute top-50 translate-middle-y p-0 clear-search-btn" 
+                        style="background: none; border: none; color: #6c757d; z-index: 10; right: @(HideBrowseButton ? "12px" : "54px");"
+                        @onclick="ClearSearch"
+                        title="Clear search">
+                    <i class="fas fa-times"></i>
+                </button>
+            }
+            
+            @if (!HideBrowseButton)
+            {
+                <button type="button" 
+                        class="btn btn-outline-secondary browse-chart-btn"
+                        disabled="@IsDisabled"
+                        @onclick="OpenChartModal"
+                        title="Browse Account Chart">
+                    <i class="fas fa-sitemap"></i>
+                </button>
+            }
+        </div>
         
         @if (ShowAccountDropdown && filteredAccounts.Any())
         {
@@ -44,6 +61,11 @@
         }
     </div>
 </div>
+
+<AccountChartModal @bind-IsVisible="isChartModalVisible" 
+                   Title="@GetModalTitle()"
+                   OnAccountSelected="OnAccountFromModalSelected"
+                   IsRangeMode="@IsRangeInput" />
 
 <style>
     .account-dropdown {
@@ -85,9 +107,16 @@
         max-height: 300px !important;
         overflow-y: auto !important;
     }
+
+    .account-search-container .form-control {
+        padding-right: var(--search-input-padding, 75px) !important;
+    }
 </style>
 
 @code {
+    // Parameter to conditionally hide the chart sitemap browse button
+    [Parameter] public bool HideBrowseButton { get; set; } = false;
+
     // Label text for the field
     [Parameter] public string Label { get; set; } = string.Empty;
 
@@ -122,6 +151,15 @@
     private string selectedAccountDisplay = "";
     private string? hoveredAccount = null;
     private bool ShowAccountDropdown = false;
+    private bool isChartModalVisible = false;
+
+    // Detect if this is a "From" or "Upto" field for range selection
+    private bool IsRangeInput => IsFromInput || IsUptoInput;
+    private bool IsFromInput => !string.IsNullOrEmpty(Label) && 
+        (Label.Contains("From", StringComparison.OrdinalIgnoreCase));
+    private bool IsUptoInput => !string.IsNullOrEmpty(Label) && 
+        (Label.Contains("Upto", StringComparison.OrdinalIgnoreCase) || 
+         Label.Contains("Up to", StringComparison.OrdinalIgnoreCase));
 
     protected override async Task OnInitializedAsync()
     {
@@ -141,6 +179,16 @@
             {
                 accountSearchTerm = Value;
             }
+        }
+
+        // Subscribe to range selection events
+        if (IsFromInput)
+        {
+            AccountSelectionState.OnFromAccountSelected += HandleRangeFromSelected;
+        }
+        else if (IsUptoInput)
+        {
+            AccountSelectionState.OnUptoAccountSelected += HandleRangeUptoSelected;
         }
     }
 
@@ -258,5 +306,59 @@
         
         StateHasChanged();
     }
-}
 
+    private void OpenChartModal()
+    {
+        isChartModalVisible = true;
+    }
+
+    private void OnAccountFromModalSelected(ClientCustomer account)
+    {
+        // Single selection mode callback — used when NOT in range mode
+        SelectAccount(account);
+    }
+
+    private void HandleRangeFromSelected(string code, int level)
+    {
+        // Only "From" inputs listen to this event
+        selectedAccountCode = code;
+        selectedAccountDisplay = code;
+        accountSearchTerm = code;
+        Value = code;
+        ValueChanged.InvokeAsync(code);
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void HandleRangeUptoSelected(string code, int level)
+    {
+        // Only "Upto" inputs listen to this event
+        selectedAccountCode = code;
+        selectedAccountDisplay = code;
+        accountSearchTerm = code;
+        Value = code;
+        ValueChanged.InvokeAsync(code);
+        InvokeAsync(StateHasChanged);
+    }
+
+    private string GetModalTitle()
+    {
+        var cleanLabel = Label?.Replace(":", "").Trim() ?? "Account";
+        if (IsRangeInput)
+        {
+            return "Browse Account Range";
+        }
+        return $"Browse {cleanLabel}";
+    }
+
+    public void Dispose()
+    {
+        if (IsFromInput)
+        {
+            AccountSelectionState.OnFromAccountSelected -= HandleRangeFromSelected;
+        }
+        else if (IsUptoInput)
+        {
+            AccountSelectionState.OnUptoAccountSelected -= HandleRangeUptoSelected;
+        }
+    }
+}

@@ -243,6 +243,40 @@ namespace pos_app.Client.Services
 			return !string.IsNullOrEmpty(token);
 		}
 
+		public async Task<bool> IsImpersonatedAsync()
+		{
+			try
+			{
+				var token = await GetTokenAsync();
+				if (string.IsNullOrEmpty(token)) return false;
+
+				var parts = token.Split('.');
+				if (parts.Length != 3) return false;
+
+				var payload = parts[1];
+				switch (payload.Length % 4)
+				{
+					case 2: payload += "=="; break;
+					case 3: payload += "="; break;
+				}
+
+				var jsonBytes = Convert.FromBase64String(payload);
+				var jsonString = System.Text.Encoding.UTF8.GetString(jsonBytes);
+				
+				using var document = JsonDocument.Parse(jsonString);
+				if (document.RootElement.TryGetProperty("is_impersonated", out var isImpersonatedProp))
+				{
+					return isImpersonatedProp.GetString() == "true";
+				}
+				
+				return false;
+			}
+			catch
+			{
+				return false;
+			}
+		}
+
 		private async Task StoreTokenAsync(string token)
 		{
 			try

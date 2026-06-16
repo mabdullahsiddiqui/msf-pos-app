@@ -399,7 +399,32 @@ namespace pos_app.Client.Services
                 return new CEOReportResponse();
             }
         }
+
+        public async Task<string?> GetCompanyInfoAsync()
+        {
+            try
+            {
+                var client = await CreateAuthedClientAsync();
+                var response = await client.GetAsync("api/clientdata/company-info");
+                if (response.IsSuccessStatusCode)
+                {
+                    var content = await response.Content.ReadAsStringAsync();
+                    var result = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(content);
+                    if (result.TryGetProperty("companyName", out var companyName))
+                    {
+                        return companyName.GetString();
+                    }
+                }
+                return null;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting company info");
+                return null;
+            }
+        }
         
+
         /*
          * COMMENTED OUT - Simple Trial Balance (kept for backward compatibility)
          * This calls the old simple trial balance endpoint.
